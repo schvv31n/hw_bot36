@@ -9,7 +9,7 @@ def get_hw(cur_date=datetime.now().strftime('%Y-%m-%d')):  #cur_date должн�
     if cur_date.weekday()==5:
         cur_date = cur_date+timedelta(days=2)    #если день недели - суббота, дата сдвигается на следующую неделю
     
-    with PoolManager() as http:
+    with PoolManager(cert_reqs='CERT_NONE') as http:
         
         r = http.request('POST', 'https://sh-open.ris61edu.ru/auth/login',   
                          fields={'login_login': '36_Курдов_Тимофей_36', 'login_password': 'faYUzEUK'})   #залогиниться
