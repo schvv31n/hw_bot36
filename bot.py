@@ -70,6 +70,6 @@ updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p1), r
 
 
 
-updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=data.token2)
+updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=data.token1)
 updater.bot.set_webhook(data.webhook_url)
 updater.idle()
