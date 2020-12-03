@@ -12,7 +12,8 @@ def get_hw(cur_date=datetime.now().strftime('%Y-%m-%d')):  #cur_date должн�
         
     r = urllib.request.Request('https://sh-open.ris61edu.ru/auth/login',
                                 data=urllib.parse.urlencode((('login_login', '36_Курдов_Тимофей_36'), ('login_password', 'faYUzEUK'))).encode(),
-                                method='POST')
+                                method='POST',
+                                unverifiable=True)
     r = urllib.request.urlopen(r)   #залогиниться
     print(r.code)
     if r.status>=400:
@@ -22,7 +23,8 @@ def get_hw(cur_date=datetime.now().strftime('%Y-%m-%d')):  #cur_date должн�
         
     r2 = urllib.request.Request('https://sh-open.ris61edu.ru/personal-area/#diary',
                                 headers={'Cookie':'; '.join(cookies)},
-                                method='GET')
+                                method='GET',
+                                unverifiable=True)
     r2 = urllib.request.urlopen(r2)   #зайти на сайт
     print(r2.code)
     if r2.code>=400:
@@ -31,7 +33,8 @@ def get_hw(cur_date=datetime.now().strftime('%Y-%m-%d')):  #cur_date должн�
     r3 = urllib.request.Request('https://sh-open.ris61edu.ru/api/ScheduleService/GetDiary',
                                 data=urllib.parse.urlencode((('date', cur_date.strftime('%Y-%m-%d')), ('is_diary', 'true'))).encode(),
                                 headers={'Cookie':'; '.join(cookies)},
-                                method='POST')
+                                method='POST',
+                                unverifiable=True)
     r3 = urllib.request.urlopen(r3)    #получить расписание от дневника
     print(r3.code)
     if r3.code>=400:
