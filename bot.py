@@ -13,6 +13,15 @@ kw = {'англ': 'Англ.яз', 'алг': "Алгебра", "био": "Био
 tables = {'Англ.яз': 'english', 'Алгебра': 'algebra', 'Биология': 'biology', 'География': 'geography', 'Физра': 'PE', 'Физика': 'physics', 'Литра': 'literature', 'Химия': 'chemistry', 'Геометрия': 'geometry', 'Нем.': 'german','Франц.яз':'french', 'История': 'history', 'Обществознание': 'sociology', 'Рус.яз': 'russian', 'Технология': 'technology', 'ОБЖ': 'obzh'}
 schedule = ['8:10 - 8:50', '9:00 - 9:40', '9:55 - 10:35', '10:50 - 11:30', '11:45 - 12:25', '12:35 - 13:15', '13:25 - 14:05']
 
+def stop_bot(update, context):
+    if update.message.from_user.id==420736786:
+        update.message.reply_text('Бот отключен')
+        updater.bot.delete_webhook()
+        updater.stop()
+    else:
+        update.message.reply_sticker(sticker='CAACAgIAAxkBAAMcX6LrsyrpHv72CRJy6kpNife4oIgAAgYAAxLvExmDIS_rRvj5qR4E')
+updater.dispatcher.add_handler(tg_ext.CommandHandler('stop', stop_bot))
+
 def daily_schedule(context):
     hw = get_hw()
     if hw['valid']:
