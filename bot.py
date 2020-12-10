@@ -114,7 +114,7 @@ def read_hw(update, context):
         return
     if type(hw[2])==dict:
         if hw[2]['photoid']:
-            update.message.reply_photo(photo=db_hw['photoid'], caption=db_hw['text']
+            update.message.reply_photo(photo=db_hw['photoid'], caption=db_hw['text'])
         else:
             update.message.reply_text(db_hw['text'])
 p1 = re.compile(f".*((что|че).*по.?({'|'.join(kw)})|по.?({'|'.join(kw)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
