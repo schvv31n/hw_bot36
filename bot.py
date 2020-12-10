@@ -114,9 +114,11 @@ def read_hw(update, context):
         return
     if type(hw[2])==dict:
         if hw[2]['photoid']:
-            update.message.reply_photo(photo=db_hw['photoid'], caption=db_hw['text'])
+            update.message.reply_photo(photo=hw[2]['photoid'], caption=f"Д/З по предмету {hw[0]} на {hw[1]}")
         else:
-            update.message.reply_text(db_hw['text'])
+            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}")
+    else:
+        update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]}")
 p1 = re.compile(f".*((что|че).*по.?({'|'.join(kw)})|по.?({'|'.join(kw)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p1), read_hw))
 
