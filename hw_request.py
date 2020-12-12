@@ -1,13 +1,16 @@
-from urllib3 import PoolManager
+from urllib3 import PoolManager, disable_warnings
 from datetime import datetime, timedelta
 import re
 import json
 
-def get_hw(cur_date=datetime.now().strftime('%Y-%m-%d')):
-    cur_date = datetime.strptime(cur_date, '%Y-%m-%d')
+def get_hw():
+    disable_warnings()
     
-    if cur_date.weekday()==5:
-        cur_date = cur_date+timedelta(days=2)
+    this_week = datetime.now()
+    
+    if this_week.weekday()==5:
+        this_week = this_week+timedelta(days=2)
+    next_week = this_week+timedelta(days=7)
     
     with PoolManager(cert_reqs='CERT_NONE') as http:
         
@@ -25,7 +28,7 @@ def get_hw(cur_date=datetime.now().strftime('%Y-%m-%d')):
             return {'valid': False, 'error': r2.geturl()[28:]+'->'+str(r2.status)}
         
         r3 = http.request('POST', 'https://sh-open.ris61edu.ru/api/ScheduleService/GetDiary',
-                    fields={'date': cur_date.strftime('%Y-%m-%d'), 'is_diary': 'true'},
+                    fields={'date': this_week.strftime('%Y-%m-%d'), 'is_diary': 'true'},
                     headers={'Cookie':'; '.join(cookies),
                              'Content-Type': 'application/x-www-form-urlencoded',
                              'Content-Length': '29'},
@@ -33,4 +36,19 @@ def get_hw(cur_date=datetime.now().strftime('%Y-%m-%d')):
         print(r3.status)
         if r3.status>=400:
             return {'valid': False, 'error': r3.geturl()[28:]+'->'+str(r3.status)}
-    return {'valid': True, 'content': json.loads(r3.data.decode())['days']}
+        
+        r4 = http.request('POST', 'https://sh-open.ris61edu.ru/api/ScheduleService/GetDiary',
+                    fields={'date': next_week.strftime('%Y-%m-%d'), 'is_diary': 'true'},
+                    headers={'Cookie':'; '.join(cookies),
+                             'Content-Type': 'application/x-www-form-urlencoded',
+                             'Content-Length': '29'},
+                          encode_multipart=False)
+        print(r4.status)
+        if r4.status>=400:
+            return {'valid': False, 'error': r4.geturl()[28:]+'->'+str(r4.status)}
+        
+    res = {'valid': True, 'content': json.loads(r3.data.decode())['days']+json.loads(r4.data.decode())['days']}
+    del res['content'][::-7]
+    with open('hw.json', 'w') as hw_writer:
+        hw_writer.write(json.dumps(res))
+    return res
