@@ -6,7 +6,6 @@ import data
 
 def get_hw():
     disable_warnings()   #отключение предупреждений о незащищенном соединении
-    kw = ['англ', 'алг', 'био', 'геог', 'физр', 'физик', 'лит', 'хим', 'геом', 'нем', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'родн', 'инф']
     this_week = datetime.now()   #получение нынешнего времени
     
     if this_week.weekday()>=5:                     #если день недели суббота,
@@ -52,8 +51,8 @@ def get_hw():
             return {'valid': False, 'error': r4.geturl()[28:]+'->'+str(r4.status)}  #если возникла ошибка, возврат ошибки 
                                                                                     #и остановка функции
         
-    res = json.loads(r3.data.decode())['days']+json.loads(r4.data.decode())['days']
-    del res[::-7]   #удаление воскресений из полученного расписания
+    res = {'valid': True, 'content': json.loads(r3.data.decode())['days']+json.loads(r4.data.decode())['days']}
+    del res['content'][::-7]   #удаление воскресений из полученного расписания
     with open(data.DB_FILENAME, 'w') as hw_writer:
         hw_writer.write(json.dumps(res))
     return res

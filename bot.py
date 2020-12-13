@@ -37,9 +37,14 @@ updater.dispatcher.add_handler(tg_ext.CommandHandler('exec', exec_script))
 
 def update_hw(update=None, context=None):
     if update:
-        if update.message.from_user.id!=420736786:
-            return
-    get_hw()
+        if update.message.from_user.id==420736786:
+            resp = get_hw()
+            if resp['valid']:
+                update.message.reply_text('Д/З обновлено')
+            else:
+                update.message.reply_text('Ошибка: '+resp['error'])
+    else:
+        get_hw()
 updater.job_queue.run_repeating(update_hw, 3600)
 updater.dispatcher.add_handler(tg_ext.CommandHandler('force_update', update_hw))
     
@@ -49,7 +54,7 @@ def daily_schedule(context):
         
     target_weekday = dt.datetime.now().weekday()    
     if target_weekday==5:
-        target_weekday += 1
+        target_weekday = -1
     target_weekday += 1
            
     if hw['valid']:
@@ -76,8 +81,8 @@ def read_hw(update, context):
         res = json.loads(hw_reader.read())
         
     target_weekday = dt.datetime.now().weekday()
-    if target_weekday==5:
-        target_weekday += 1
+    if target_weekday>=5:
+        target_weekday = -1
     target_weekday += 1
     
     hw = None
@@ -134,7 +139,6 @@ def write_hw(update, context):
     update.message.reply_text('Д/З записано')
 hw_write_match = re.compile(f"^({'|'.join(data.LESSONS_SHORTCUTS)}).*[:-] (.*)", re.IGNORECASE)
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(hw_write_match) | tg_ext.Filters.photo, write_hw))
-
 
 
 
