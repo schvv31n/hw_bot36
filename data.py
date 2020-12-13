@@ -5,6 +5,7 @@ URL_TEMP = 'https://d25c2d913c09.ngrok.io/'
 LOCAL_DB_FILENAME = 'local_hw.json'
 DB_FILENAME = 'hw.json'
 TARGET_CHAT_ID = '-1001265019760'
+LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физр', 'физик', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'родн', 'инф']
 
 
 WEBHOOK_URL = URL + TOKEN1
