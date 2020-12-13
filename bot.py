@@ -11,9 +11,7 @@ import json
 import traceback
 updater = tg_ext.Updater(token=data.TOKEN1, use_context=True)
 
-kw = ['англ', 'алг', 'био', 'геог', 'физр', 'физик', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'родн']
-
-HW_SEARCH = re.compile(f"({'|'.join(kw)})", re.IGNORECASE)
+HW_SEARCH = re.compile(f"({'|'.join(data.LESSONS_SHORTCUTS)})", re.IGNORECASE)
 
 def errors(update, context):
     try:
@@ -73,7 +71,6 @@ def daily_schedule(context):
         update.message.reply_text('Не удалось получить расписание на завтра\nОшибка: '+hw['error'])
 updater.job_queue.run_daily(daily_schedule, dt.time(hour=18, tzinfo=timezone('Europe/Moscow')), days=list(range(6)))
 
-res_global = (None, None)
 def read_hw(update, context):
     with open(data.DB_FILENAME) as hw_reader:
         res = json.loads(hw_reader.read())
@@ -103,7 +100,7 @@ def read_hw(update, context):
                     update.message.reply_text('Д/З: '+db_hw['text'])
                     return
             else:
-                update.message.reply_text('Ошибка: '+res['error'])
+                update.message.reply_text('Ошибка: предмет не найден')
                 return
         elif hw[2]=='':
             hw[2] = database.read((groups[2] if groups[2] else groups[3]))
@@ -123,7 +120,7 @@ def read_hw(update, context):
             update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}")
     else:
         update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]}")
-p1 = re.compile(f".*((что|че).*по.?({'|'.join(kw)})|по.?({'|'.join(kw)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
+p1 = re.compile(f".*((что|че).*по.?({'|'.join(data.LESSONS_SHORTCUTS)})|по.?({'|'.join(data.LESSONS_SHORTCUTS)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p1), read_hw))
 
 def write_hw(update, context):
@@ -135,7 +132,7 @@ def write_hw(update, context):
         database.write(key=HW_SEARCH.search(update.message.text).groups()[0].lower(),
                        hw_text=context.match.groups()[1])
     update.message.reply_text('Д/З записано')
-hw_write_match = re.compile(f"^({'|'.join(kw)}).*[:-] (.*)", re.IGNORECASE)
+hw_write_match = re.compile(f"^({'|'.join(data.LESSONS_SHORTCUTS)}).*[:-] (.*)", re.IGNORECASE)
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(hw_write_match) | tg_ext.Filters.photo, write_hw))
 
 
