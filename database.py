@@ -1,15 +1,14 @@
 import json
-
-DB_FILENAME = 'hw.json'
+import data
 
 def write(key, hw_text='', hw_photoid=''):
-    db = json.load(open('hw.json'))
+    db = json.load(open(data.LOCAL_DB_FILENAME))
     db.update({key: {'text': hw_text, 'photoid': hw_photoid}})
-    json.dump(db, open('hw.json', 'w'))
+    json.dump(db, open(data.LOCAL_DB_FILENAME, 'w'))
 
 def read(key=''):
-    db = json.load(open('hw.json'))
+    db = json.load(open(data.LOCAL_DB_FILENAME))
     if key:
         return db.get(key, '')
     else:
-        return db
+        return '\n'.join([k+' - '+v for k, v in db.items()])
