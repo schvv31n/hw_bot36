@@ -48,7 +48,7 @@ def update_hw(update=None, context=None):
 updater.job_queue.run_repeating(update_hw, 3600)
 updater.dispatcher.add_handler(tg_ext.CommandHandler('force_update', update_hw))
     
-def daily_schedule(context):
+def daily_schedule(update=None, context=None):
     with open(data.DB_FILENAME) as hw_reader:
         hw = json.loads(hw_reader.read())
         
@@ -62,19 +62,22 @@ def daily_schedule(context):
         photos = []
         for i in hw['content'][target_weekday]['lessons']:
             hw_shortcut = HW_SEARCH.search(i['discipline']).groups()[0].lower()
-            print(hw_shortcut)
             db_hw = database.read(hw_shortcut)
-            if db_hw['photoid']:
-                photos.append((db_hw['photoid'], i['discipline']))
-            lesson_hw = i['homework'] if i['homework'] else db_hw['text']+(f'(фото {len(photos)})' if db_hw['photoid'] else '')
+            if type(db_hw)==dict:
+                if db_hw['photoid']:
+                    photos.append((db_hw['photoid'], i['discipline']))
+                lesson_hw = i['homework'] if i['homework'] else db_hw['text']+(f'(фото {len(photos)})' if db_hw['photoid'] else '')
+            else:
+                lesson_hw = i['homework']
             parsed_hw+=f"{i['discipline']}({i['time_begin'][:5]} - {i['time_end'][:5]})\nД/З - {lesson_hw}\n"
             
-            updater.bot.send_message(chat_id=data.TARGET_CHAT_ID, text=parsed_hw)
-            if photos:
-                updater.bot.send_media_group(chat_id=data.TARGET_CHAT_ID, media=[tg.InputMediaPhoto(media=i[0], caption=i[1]) for i in photos])
+        updater.bot.send_message(chat_id=data.TARGET_CHAT_ID, text=parsed_hw)
+        if photos:
+            updater.bot.send_media_group(chat_id=data.TARGET_CHAT_ID, media=[tg.InputMediaPhoto(media=i[0], caption=i[1]) for i in photos])
     else:
         update.message.reply_text('Не удалось получить расписание на завтра\nОшибка: '+hw['error'])
 updater.job_queue.run_daily(daily_schedule, dt.time(hour=18, tzinfo=timezone('Europe/Moscow')), days=list(range(6)))
+updater.dispatcher.add_handler(tg_ext.CommandHandler('debug', daily_schedule))
 
 def read_hw(update, context):
     with open(data.DB_FILENAME) as hw_reader:
