@@ -13,7 +13,7 @@ def read(key=''):
     if key:
         return db.get(key, '')
     else:
-        return '\n'.join([k+' - '+v for k, v in db.items()])
+        return str(db)
     
 if __name__=='__main__':
     command = sys.argv[1]
