@@ -1,0 +1,7 @@
+git add bot.py
+git add hw_request.py
+git add hw.json
+git add Procfile
+git add requirements.txt
+git add runtime.txt
+git add data.py
