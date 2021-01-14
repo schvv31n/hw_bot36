@@ -87,7 +87,7 @@ def daily_schedule(context, force=False):
                         photos.append({'media': material['url'], 'caption': lesson['discipline']})
                         temp_photo_counter[1] += 1
                 elif local_hw:
-                    lesson['homework'] = local_hw['text']
+                    lesson['homework'] = local_hw['hw_text']
                     outdated = local_hw['outdated']
                     for link in local_hw['photoid']:
                         photos.append({'media': link, 'caption': lesson['discipline']})
@@ -194,12 +194,12 @@ def read_hw(update, context):
                 db_hw = context.chat_data.get((groups[2] if groups[2] else groups[3]), None)
                 if db_hw:
                     if db_hw['photoid']:
-                        photos = [tg.InputMediaPhoto(media=db_hw['photoid'][0], caption=f"Д/З: {db_hw['text']}{'(устарело!)' if db_hw['outdated'] else ''}")]
+                        photos = [tg.InputMediaPhoto(media=db_hw['photoid'][0], caption=f"Д/З: {db_hw['hw_text']}{'(устарело!)' if db_hw['outdated'] else ''}")]
                         for link in db_hw['photoid'][1:]:
                             photos.append(tg.InputMediaGroup(media=link))
                         update.message.reply_media_group(media=photos)
                     else:
-                        update.message.reply_text('Д/З: '+db_hw['text'])
+                        update.message.reply_text('Д/З: '+db_hw['hw_text'])
                 else:
                     update.message.reply_text('Ошибка: предмет не найден')
             else:
@@ -214,25 +214,25 @@ def read_hw(update, context):
         if db_hw.get('photoid', None):
             photos = [tg.InputMediaPhoto(
                 media=db_hw['photoid'][0],
-                caption=f"Д/З: {db_hw['text']}{'(устарело!)' if db_hw['outdated'] else ''}"
+                caption=f"Д/З: {db_hw['hw_text']}{'(устарело!)' if db_hw['outdated'] else ''}"
             )]
             for link in db_hw['photoid'][1:]:
                 photos.append(tg.InputMediaPhoto(media=link))
             update.message.reply_media_group(media=photos)
         elif db_hw.get('text', None):
-            update.message.reply_text('Д/З: '+db_hw['text']+('(устарело!)' if db_hw['outdated'] else ''))
+            update.message.reply_text('Д/З: '+db_hw['hw_text']+('(устарело!)' if db_hw['outdated'] else ''))
         else:
             update.message.reply_text('Ошибка: '+res['error'])
         return
     #отправка сообщения с данными
     if type(hw[2])==dict:
         if hw[2]['photoid']:
-            photos = [tg.InputMediaPhoto(media=hw[2]['photoid'][0], caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}{'(устарело!)' if hw[2]['outdated'] else ''}")]
+            photos = [tg.InputMediaPhoto(media=hw[2]['photoid'][0], caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['hw_text']}{'(устарело!)' if hw[2]['outdated'] else ''}")]
             for link in hw[2]['photoid'][1:]:
                 photos.append(tg.InputMediaGroup(media=link))
             update.message.reply_media_group(media=photos)
         else:
-            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}")
+            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['hw_text']}")
     else:
         if hw[3]:
             photos = [tg.InputMediaPhoto(
