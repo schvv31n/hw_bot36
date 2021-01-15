@@ -282,7 +282,7 @@ def write_hw(update, context):
             update.message.reply_text('Название какого-либо предмета для записи Д/З не обнаружено, проверьте правильность вашего сообщения; \nЧтобы отметить, что данное фото - не Д/З, подпишите его соответственно') 
     else:
         context.chat_data[HW_SEARCH.search(update.message.text).groups()[0].lower()] = {
-            'hw_text': context.match.groups()[1],
+            'text': context.match.groups()[1],
             'photoid': '',
             'add_date': dt.datetime.now().strftime('%Y-%m-%d'),
             'outdated': False
