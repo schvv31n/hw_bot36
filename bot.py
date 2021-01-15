@@ -87,7 +87,7 @@ def daily_schedule(context, force=False):
                         photos.append({'media': material['url'], 'caption': lesson['discipline']})
                         temp_photo_counter[1] += 1
                 elif local_hw:
-                    lesson['homework'] = local_hw['hw_text']
+                    lesson['homework'] = local_hw['text']
                     outdated = local_hw['outdated']
                     for link in local_hw['photoid']:
                         photos.append({'media': link, 'caption': lesson['discipline']})
@@ -107,8 +107,9 @@ def daily_schedule(context, force=False):
             if photos:
                 updater.bot.send_media_group(chat_id=data.TARGET_CHAT_ID, media=[tg.InputMediaPhoto(**i) for i in photos])
             pinned = updater.bot.get_chat(data.TARGET_CHAT_ID).pinned_message
-            if pinned.from_user.is_bot:
-                pinned.unpin()
+            if pinned:
+                if pinned.from_user.is_bot:
+                    pinned.unpin()
             sent.pin()
         else:
             if force:
@@ -140,10 +141,10 @@ updater.dispatcher.add_handler(tg_ext.CommandHandler('stop', stop_bot))
 
 def exec_script(update, context):
         if update.message.from_user.id==data.CREATOR_ID:
-            updater.dispatcher.run_async(lambda x=None: exec(update.message.text[6:]), update=update)
+            updater.dispatcher.run_async(lambda x=None: exec(update.message.text[6:]), u=update, c=context)
 updater.dispatcher.add_handler(tg_ext.CommandHandler('exec', exec_script))
 
-#команды даминов
+#команды админов
 
 @groupadmin_function
 def update_hw(update, context):
@@ -159,6 +160,10 @@ updater.dispatcher.add_handler(tg_ext.CommandHandler('force_update', update_hw))
 def force_schedule(update, context):
     daily_schedule(context, force=True)
 updater.dispatcher.add_handler(tg_ext.CommandHandler('schedule', force_schedule))
+
+def info(update, context):
+    update.effective_chat.send_message('Версия бота: '+data.BOT_VERSION)
+updater.dispatcher.add_handler(tg_ext.CommandHandler('info', info))
 
 def read_hw(update, context):
     with open(data.DB_FILENAME) as hw_reader:
@@ -194,12 +199,12 @@ def read_hw(update, context):
                 db_hw = context.chat_data.get((groups[2] if groups[2] else groups[3]), None)
                 if db_hw:
                     if db_hw['photoid']:
-                        photos = [tg.InputMediaPhoto(media=db_hw['photoid'][0], caption=f"Д/З: {db_hw['hw_text']}{'(устарело!)' if db_hw['outdated'] else ''}")]
+                        photos = [tg.InputMediaPhoto(media=db_hw['photoid'][0], caption=f"Д/З: {db_hw['text']}{'(устарело!)' if db_hw['outdated'] else ''}")]
                         for link in db_hw['photoid'][1:]:
                             photos.append(tg.InputMediaGroup(media=link))
                         update.message.reply_media_group(media=photos)
                     else:
-                        update.message.reply_text('Д/З: '+db_hw['hw_text'])
+                        update.message.reply_text('Д/З: '+db_hw['text'])
                 else:
                     update.message.reply_text('Ошибка: предмет не найден')
             else:
@@ -214,25 +219,25 @@ def read_hw(update, context):
         if db_hw.get('photoid', None):
             photos = [tg.InputMediaPhoto(
                 media=db_hw['photoid'][0],
-                caption=f"Д/З: {db_hw['hw_text']}{'(устарело!)' if db_hw['outdated'] else ''}"
+                caption=f"Д/З: {db_hw['text']}{'(устарело!)' if db_hw['outdated'] else ''}"
             )]
             for link in db_hw['photoid'][1:]:
                 photos.append(tg.InputMediaPhoto(media=link))
             update.message.reply_media_group(media=photos)
         elif db_hw.get('text', None):
-            update.message.reply_text('Д/З: '+db_hw['hw_text']+('(устарело!)' if db_hw['outdated'] else ''))
+            update.message.reply_text('Д/З: '+db_hw['text']+('(устарело!)' if db_hw['outdated'] else ''))
         else:
             update.message.reply_text('Ошибка: '+res['error'])
         return
     #отправка сообщения с данными
     if type(hw[2])==dict:
         if hw[2]['photoid']:
-            photos = [tg.InputMediaPhoto(media=hw[2]['photoid'][0], caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['hw_text']}{'(устарело!)' if hw[2]['outdated'] else ''}")]
+            photos = [tg.InputMediaPhoto(media=hw[2]['photoid'][0], caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}{'(устарело!)' if hw[2]['outdated'] else ''}")]
             for link in hw[2]['photoid'][1:]:
                 photos.append(tg.InputMediaGroup(media=link))
             update.message.reply_media_group(media=photos)
         else:
-            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['hw_text']}")
+            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}")
     else:
         if hw[3]:
             photos = [tg.InputMediaPhoto(
@@ -286,7 +291,7 @@ def write_hw(update, context):
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p2) | tg_ext.Filters.photo, write_hw))
 
 
-
+get_hw()
 updater.bot.send_message(chat_id=data.TARGET_CHAT_ID, text='Бот включен')
 updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=data.TOKEN1)
 updater.bot.set_webhook(data.WEBHOOK_URL)
