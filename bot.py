@@ -295,5 +295,5 @@ updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p2) | 
 
 updater.bot.send_message(chat_id=os.environ['TARGET_CHAT_ID'], text='Бот включен\nВерсия бота: '+os.environ['BOT_VERSION'])
 updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=os.environ['TOKEN'])
-updater.bot.set_webhook(os.environ['URL']+os.environ['TOKEN'])
+updater.bot.set_webhook(os.environ['HOST_URL']+os.environ['TOKEN'])
 updater.idle()
