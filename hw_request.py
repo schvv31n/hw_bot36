@@ -2,14 +2,11 @@ from urllib3 import PoolManager, disable_warnings
 from datetime import datetime, timedelta
 import re
 import json
-import data
+import os
 
 def get_hw():
     disable_warnings()   #отключение предупреждений о незащищенном соединении
     this_week = datetime.now()   #получение нынешнего времени
-    
-    if this_week.weekday()>=5:                     #если день недели суббота,
-        this_week = this_week+timedelta(days=2)    #то брать информацию на эту неделю не нужно, т.к. она прошла;
     next_week = this_week+timedelta(days=7)        #определение даты для получения информации на следующею неделю
     
     with PoolManager(cert_reqs='CERT_NONE') as http:
@@ -52,7 +49,6 @@ def get_hw():
                                                                                     #и остановка функции
         
     res = {'valid': True, 'content': json.loads(r3.data.decode())['days']+json.loads(r4.data.decode())['days']}
-    del res['content'][::-7]   #удаление воскресений из полученного расписания
-    with open(data.DB_FILENAME, 'w') as hw_writer:
+    with open(os.environ['DB_FILENAME'], 'w') as hw_writer:
         hw_writer.write(json.dumps(res))
     return res
