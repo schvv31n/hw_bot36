@@ -8,13 +8,21 @@ from hw_request import get_hw
 from pytz import timezone
 import traceback
 import sys
-updater = tg_ext.Updater(token=os.environ['TOKEN'], use_context=True) 
+updater = tg_ext.Updater(token=os.environ['TOKEN'], use_context=True)
 
 LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', 'физ', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'родн', 'инф']
 HW_SEARCH = re.compile(f"({'|'.join(LESSONS_SHORTCUTS)})", re.IGNORECASE)   #простой match обьект для поиска названий предметов
 LESSONS_STARTS = [{'hour': 8, 'minute': 10}, {'hour': 9, 'minute': 0}, {'hour': 9, 'minute': 55}, {'hour': 10, 'minute': 50}, {'hour': 11, 'minute': 45}, {'hour': 12, 'minute': 35}, {'hour': 13, 'minute': 25}]
 
 #декораторы
+
+def handle_chat_data(f):
+    def decorated(update, context):
+        for key in ['hw', 'media_groups']:
+            if not context.chat_data.get(key):
+                context.chat_data[key] = {}
+        f(update, context)
+    return decorated
 
 def groupadmin_function(f):
     def decorated(update, context):
@@ -48,10 +56,12 @@ def errors(update, context=None):
         raise context.error   #структура работы error handler модуля telegram
     except:
         tb = traceback.format_exc()   #преобразовать информацию об ошибке в понятный и подробный вид
+        tb = tb[max(0, len(tb) - tg.constants.MAX_MESSAGE_LENGTH):]
         if type(update)==tg_ext.Updater:    #проверить, передан ли update обьект в функцию
             update.effective_chat.send_message(text='Неизвестная ошибка: \n'+tb)   #отправить текст ошибки в чат, с которого пошла ошибка
         else:
             updater.bot.send_message(chat_id=os.environ['CREATOR_ID'], text=tb)  #отправить текст ошибки создателю бота
+        print([type(i) for i in updater.dispatcher.chat_data.keys()])
 updater.dispatcher.add_error_handler(errors)
 
 def ny_message(context):
@@ -140,7 +150,7 @@ def stop_bot(update, context):
 updater.dispatcher.add_handler(tg_ext.CommandHandler('stop', stop_bot))
 
 def exec_script(update, context):
-        if update.message.from_user.id==os.environ['CREATOR_ID']:
+        if update.message.from_user.id==int(os.environ['CREATOR_ID']):
             updater.dispatcher.run_async(lambda u=None, c=None: exec(update.message.text[6:]), u=update, c=context)
 updater.dispatcher.add_handler(tg_ext.CommandHandler('exec', exec_script))
 
@@ -162,9 +172,10 @@ def force_schedule(update, context):
 updater.dispatcher.add_handler(tg_ext.CommandHandler('schedule', force_schedule))
 
 def info(update, context):
-    update.effective_chat.send_message('Версия бота: '+os.environ['BOT_VERSION']+':beta2')
+    update.effective_chat.send_message('Версия бота: '+os.environ['BOT_VERSION'])
 updater.dispatcher.add_handler(tg_ext.CommandHandler('info', info))
 
+@handle_chat_data
 def read_hw(update, context):
     with open(os.environ['DB_FILENAME']) as hw_reader:
         res = json.loads(hw_reader.read())
@@ -197,12 +208,12 @@ def read_hw(update, context):
                 
         if not hw:
             if 'на сегодня' not in update.message.text.lower():
-                db_hw = context.chat_data.get((groups[2] if groups[2] else groups[3]), None)
+                db_hw = context.chat_data['hw'].get((groups[2] if groups[2] else groups[3]), None)
                 if db_hw:
                     if db_hw['photoid']:
                         photos = [tg.InputMediaPhoto(media=db_hw['photoid'][0], caption=f"Д/З: {db_hw['text']}{'(устарело!)' if db_hw['outdated'] else ''}")]
                         for link in db_hw['photoid'][1:]:
-                            photos.append(tg.InputMediaGroup(media=link))
+                            photos.append(tg.InputMediaPhoto(media=link))
                         update.message.reply_media_group(media=photos)
                     else:
                         update.message.reply_text('Д/З: '+db_hw['text'])
@@ -213,10 +224,10 @@ def read_hw(update, context):
                 print(groups[2] if groups[2] else groups[3])
             return
         elif hw[2]=='':
-            hw[2] = context.chat_data.get((groups[2] if groups[2] else groups[3]), '')
+            hw[2] = context.chat_data['hw'].get((groups[2] if groups[2] else groups[3]), '')
             
     else:
-        db_hw = context.chat_data.get((groups[2] if groups[2] else groups[3]), {})
+        db_hw = context.chat_data['hw'].get((groups[2] if groups[2] else groups[3]), {})
         if db_hw.get('photoid', None):
             photos = [tg.InputMediaPhoto(
                 media=db_hw['photoid'][0],
@@ -235,7 +246,7 @@ def read_hw(update, context):
         if hw[2]['photoid']:
             photos = [tg.InputMediaPhoto(media=hw[2]['photoid'][0], caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}{'(устарело!)' if hw[2]['outdated'] else ''}")]
             for link in hw[2]['photoid'][1:]:
-                photos.append(tg.InputMediaGroup(media=link))
+                photos.append(tg.InputMediaPhoto(media=link))
             update.message.reply_media_group(media=photos)
         else:
             update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}")
@@ -254,11 +265,17 @@ def read_hw(update, context):
 p1 = re.compile(f"\\b((что|че)\\b.*по.?({'|'.join(LESSONS_SHORTCUTS)})|по.?({'|'.join(LESSONS_SHORTCUTS)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p1), read_hw))
 
-p2 = re.compile(f"^({'|'.join(LESSONS_SHORTCUTS)}).*[:-] (.*)", re.IGNORECASE)
+p2 = re.compile(f"^({'|'.join(LESSONS_SHORTCUTS)}).*[:-] (.*)", re.IGNORECASE+re.MULTILINE)
+
+@handle_chat_data
 def write_hw(update, context):
-    
     if update.message.photo:
-        if update.message.caption:
+        if update.message.media_group_id in list(context.chat_data.get('media_groups', {}).keys()):  #проверка на id альбома в памяти
+            context.chat_data['hw'][context.chat_data['media_groups'][update.message.media_group_id]]['photoid'].append(
+                update.message.photo[0].file_id
+            )   #добавление фото из сообщения к дз с одинаковым id альбома, что и у нового фото
+            
+        else:
             hw_match = HW_SEARCH.search(update.message.caption)
             if hw_match:
                 actual_hw_text = ''
@@ -267,33 +284,43 @@ def write_hw(update, context):
                 if hw_full_match:
                     actual_hw_text = hw_full_match.groups()[1]
                     
-                context.chat_data[hw_match.groups()[0].lower()] = {
+                context.chat_data['hw'][hw_match.groups()[0].lower()] = {
                     'text': actual_hw_text,
-                    'photoid': [i.file_id for i in update.message.photo],
+                    'photoid': [update.message.photo[0].file_id],
                     'add_date': dt.datetime.now().strftime('%Y-%m-%d'),
                     'outdated': False
                 }
                 
+                reverse = {b: a for a, b in context.chat_data.get('media_groups', {})}
+                if context.chat_data['media_groups'].get(reverse.get(hw_match.groups()[0].lower())):
+                    del context.chat_data['media_groups'][reverse[hw_match.groups()[0].lower()]]
+                context.chat_data.get('media_groups', {})[update.message.media_group_id] = hw_match.groups()[0].lower()
+                
                 update.message.reply_text('Д/З записано')
-            elif re.compile('не д[ ./]?з[ .]?', re.IGNORECASE).search(update.message.caption):
-                pass
-            else:
-                update.message.reply_text('Название какого-либо предмета для записи Д/З не обнаружено, проверьте правильность вашего сообщения; \nЧтобы отметить, что данное фото - не Д/З, подпишите его соответственно') 
-        else:
-            update.message.reply_text('Название какого-либо предмета для записи Д/З не обнаружено, проверьте правильность вашего сообщения; \nЧтобы отметить, что данное фото - не Д/З, подпишите его соответственно') 
     else:
-        context.chat_data[HW_SEARCH.search(update.message.text).groups()[0].lower()] = {
-            'text': context.match.groups()[1],
-            'photoid': '',
+        context.chat_data['hw'][HW_SEARCH.search(update.message.text).groups()[0].lower()] = {
+            'text': context.match.groups()[1].lower(),
+            'photoid': [],
             'add_date': dt.datetime.now().strftime('%Y-%m-%d'),
             'outdated': False
         }
+        
+        reverse = {b: a for a, b in context.chat_data.get('media_groups', {})}
+        del context.chat_data.get('media_groups', {})[reverse[context.match.groups()[1].lower()]]
+        
         update.message.reply_text('Д/З записано')
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p2) | tg_ext.Filters.photo, write_hw))
 
-
+if os.path.exists(os.environ['DB_FILENAME']):
+    with open(os.environ['DB_FILENAME']) as cache:
+        cache_dict = json.loads(cache.read())
+        if dt.datetime.now() - dt.datetime.fromisoformat(cache_dict['read_at']) > dt.timedelta(hours=1):
+            get_hw()
+else:
+    get_hw()
 
 updater.bot.send_message(chat_id=os.environ['TARGET_CHAT_ID'], text='Бот включен\nВерсия бота: '+os.environ['BOT_VERSION'])
+
 updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=os.environ['TOKEN'])
 updater.bot.set_webhook(os.environ['HOST_URL']+os.environ['TOKEN'])
 updater.idle()
