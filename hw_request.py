@@ -48,7 +48,10 @@ def get_hw():
             return {'valid': False, 'error': r4.geturl()[28:]+'->'+str(r4.status)}  #если возникла ошибка, возврат ошибки 
                                                                                     #и остановка функции
         
-    res = {'valid': True, 'content': json.loads(r3.data.decode())['days']+json.loads(r4.data.decode())['days']}
+    res = {'read_at': datetime.now().isoformat(),
+           'valid': True,
+           'content': json.loads(r3.data.decode())['days']+json.loads(r4.data.decode())['days']
+          }
     with open(os.environ['DB_FILENAME'], 'w') as hw_writer:
         hw_writer.write(json.dumps(res))
     return res
