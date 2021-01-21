@@ -172,7 +172,7 @@ def force_schedule(update, context):
 updater.dispatcher.add_handler(tg_ext.CommandHandler('schedule', force_schedule))
 
 def info(update, context):
-    update.effective_chat.send_message('Версия бота: '+os.environ['BOT_VERSION'])
+    update.effective_chat.send_message(f"Версия бота: {os.environ['BOT_VERSION']}\nСоздатель: @schvv31n\nИсходный код: https://github.com/schvv31n/hw_bot36")
 updater.dispatcher.add_handler(tg_ext.CommandHandler('info', info))
 
 @handle_chat_data
