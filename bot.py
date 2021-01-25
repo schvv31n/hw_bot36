@@ -142,7 +142,7 @@ updater.job_queue.run_repeating(lambda c: get_hw(), interval=3600, first=0)
 #команды создателя
 
 def stop_bot(update, context):
-    if update.message.from_user.id==os.environ['CREATOR_ID']:
+    if update.message.from_user.id==int(os.environ['CREATOR_ID']):
         update.message.reply_text('Бот отключен\nЛокально записанное дз: \n'+json.dumps(context.chat_data))
         updater.bot.delete_webhook()
         updater.stop()
@@ -172,7 +172,7 @@ def force_schedule(update, context):
 updater.dispatcher.add_handler(tg_ext.CommandHandler('schedule', force_schedule))
 
 def info(update, context):
-    update.effective_chat.send_message('Версия бота: '+os.environ['BOT_VERSION'])
+    update.effective_chat.send_message(f"Версия бота: {os.environ['BOT_VERSION']}\nСоздатель: @schvv31n\nИсходный код: https://github.com/schvv31n/hw_bot36")
 updater.dispatcher.add_handler(tg_ext.CommandHandler('info', info))
 
 @handle_chat_data
@@ -270,7 +270,7 @@ p2 = re.compile(f"^({'|'.join(LESSONS_SHORTCUTS)}).*[:-] (.*)", re.IGNORECASE+re
 @handle_chat_data
 def write_hw(update, context):
     if update.message.photo:
-        if update.message.media_group_id in list(context.chat_data.get('media_groups', {}).keys()):  #проверка на id альбома в памяти
+        if update.message.media_group_id in list(context.chat_data['media_groups'].keys()):  #проверка на id альбома в памяти
             context.chat_data['hw'][context.chat_data['media_groups'][update.message.media_group_id]]['photoid'].append(
                 update.message.photo[0].file_id
             )   #добавление фото из сообщения к дз с одинаковым id альбома, что и у нового фото
@@ -291,10 +291,10 @@ def write_hw(update, context):
                     'outdated': False
                 }
                 
-                reverse = {b: a for a, b in context.chat_data.get('media_groups', {})}
-                if context.chat_data['media_groups'].get(reverse.get(hw_match.groups()[0].lower())):
+                reverse = {b: a for a, b in context.chat_data['media_groups'].items()}
+                if context.chat_data['media_groups'].get(reverse.get(hw_match.groups()[0].lower(), None), None):
                     del context.chat_data['media_groups'][reverse[hw_match.groups()[0].lower()]]
-                context.chat_data.get('media_groups', {})[update.message.media_group_id] = hw_match.groups()[0].lower()
+                context.chat_data['media_groups'][update.message.media_group_id] = hw_match.groups()[0].lower()
                 
                 update.message.reply_text('Д/З записано')
     else:
@@ -305,8 +305,10 @@ def write_hw(update, context):
             'outdated': False
         }
         
-        reverse = {b: a for a, b in context.chat_data.get('media_groups', {})}
-        del context.chat_data.get('media_groups', {})[reverse[context.match.groups()[1].lower()]]
+        print(context.chat_data['media_groups'])
+        reverse = {b: a for a, b in context.chat_data['media_groups'].items()}
+        if context.chat_data['media_groups'].get(reverse.get(context.match.groups()[0].lower(), None), None):
+            del context.chat_data['media_groups'][reverse[context.match.groups()[0].lower()]]
         
         update.message.reply_text('Д/З записано')
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p2) | tg_ext.Filters.photo, write_hw))
