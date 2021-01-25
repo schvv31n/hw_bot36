@@ -8,7 +8,14 @@ from hw_request import get_hw
 from pytz import timezone
 import traceback
 import sys
-updater = tg_ext.Updater(token=os.environ['TOKEN'], use_context=True)
+
+if not os.path.exists(os.environ['CACHE_FILENAME']):
+    with open(os.environ['CACHE_FILENAME'], 'w') as writer:
+        writer.write('{}')
+
+with open(os.environ['CACHE_FILENAME']) as reader:
+    cache_loader = tg_ext.DictPersistence(chat_data_json = reader.read())
+updater = tg_ext.Updater(token=os.environ['TOKEN'], use_context=True, persistence=cache_loader)
 
 LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', 'физ', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'родн', 'инф']
 HW_SEARCH = re.compile(f"({'|'.join(LESSONS_SHORTCUTS)})", re.IGNORECASE)   #простой match обьект для поиска названий предметов
@@ -54,14 +61,19 @@ def local_hw_cleaner(index):
 def errors(update, context=None):   
     try:
         raise context.error   #структура работы error handler модуля telegram
-    except:
-        tb = traceback.format_exc()   #преобразовать информацию об ошибке в понятный и подробный вид
-        tb = tb[max(0, len(tb) - tg.constants.MAX_MESSAGE_LENGTH):]
-        if type(update)==tg_ext.Updater:    #проверить, передан ли update обьект в функцию
-            update.effective_chat.send_message(text='Неизвестная ошибка: \n'+tb)   #отправить текст ошибки в чат, с которого пошла ошибка
+    except Exception as err:
+        if type(err)==tg.error.Conflict:
+            updater.bot.send_message(
+                chat_id=os.environ['CREATOR_ID'],
+                text='Ошибка: несколько программ подключены к одному боту'
+            )
         else:
-            updater.bot.send_message(chat_id=os.environ['CREATOR_ID'], text=tb)  #отправить текст ошибки создателю бота
-        print([type(i) for i in updater.dispatcher.chat_data.keys()])
+            tb = traceback.format_exc()   #преобразовать информацию об ошибке в понятный и подробный вид
+            tb = tb[max(0, len(tb) - tg.constants.MAX_MESSAGE_LENGTH):]
+            if type(update)==tg_ext.Updater:    #проверить, передан ли update обьект в функцию
+                update.effective_chat.send_message(text='Неизвестная ошибка: \n'+tb)   #отправить текст ошибки в чат, с которого пошла ошибка
+            else:
+                updater.bot.send_message(chat_id=os.environ['CREATOR_ID'], text=tb)  #отправить текст ошибки создателю бота
 updater.dispatcher.add_error_handler(errors)
 
 def ny_message(context):
@@ -78,7 +90,7 @@ def daily_schedule(context, force=False):
         
     target_weekday = dt.datetime.now().weekday()    
     if target_weekday==5:
-        target_weekday = -1
+        target_weekday += 1
     target_weekday += 1
           
     if hw['valid']:
@@ -112,7 +124,6 @@ def daily_schedule(context, force=False):
                 
                 parsed_hw += f"<b>{lesson['discipline']}({lesson['time_begin'][:5]} - {lesson['time_end'][:5]})</b>\nТема: {lesson['theme']}\nД/З: {lesson['homework']+photo_index}{'(устарело!)' if outdated else ''}\n\n"
             
-            print(parsed_hw)
             sent = updater.bot.send_message(chat_id=os.environ['TARGET_CHAT_ID'], text=parsed_hw, parse_mode='HTML')
             if photos:
                 updater.bot.send_media_group(chat_id=os.environ['TARGET_CHAT_ID'], media=[tg.InputMediaPhoto(**i) for i in photos])
@@ -143,7 +154,7 @@ updater.job_queue.run_repeating(lambda c: get_hw(), interval=3600, first=0)
 
 def stop_bot(update, context):
     if update.message.from_user.id==int(os.environ['CREATOR_ID']):
-        update.message.reply_text('Бот отключен\nЛокально записанное дз: \n'+json.dumps(context.chat_data))
+        update.message.reply_text('Бот отключен')
         updater.bot.delete_webhook()
         updater.stop()
         sys.exit()
@@ -184,10 +195,9 @@ def read_hw(update, context):
     target_weekday = dt.datetime.now().weekday()
     end_weekday = None
     if 'на сегодня' not in update.message.text.lower():
-        if target_weekday>=5:
-            target_weekday = 7
-        else:
+        if target_weekday==5:
             target_weekday += 1
+        target_weekday += 1
     else:
         end_weekday = target_weekday + 1
     
@@ -269,6 +279,11 @@ p2 = re.compile(f"^({'|'.join(LESSONS_SHORTCUTS)}).*[:-] (.*)", re.IGNORECASE+re
 
 @handle_chat_data
 def write_hw(update, context):
+    if update.message.forward_date:
+        actual_date = update.message.forward_date
+    else:
+        actual_date = update.message.date
+        
     if update.message.photo:
         if update.message.media_group_id in list(context.chat_data['media_groups'].keys()):  #проверка на id альбома в памяти
             context.chat_data['hw'][context.chat_data['media_groups'][update.message.media_group_id]]['photoid'].append(
@@ -287,7 +302,7 @@ def write_hw(update, context):
                 context.chat_data['hw'][hw_match.groups()[0].lower()] = {
                     'text': actual_hw_text,
                     'photoid': [update.message.photo[0].file_id],
-                    'add_date': dt.datetime.now().strftime('%Y-%m-%d'),
+                    'add_date': actual_date.strftime('%Y-%m-%d'),
                     'outdated': False
                 }
                 
@@ -301,7 +316,7 @@ def write_hw(update, context):
         context.chat_data['hw'][HW_SEARCH.search(update.message.text).groups()[0].lower()] = {
             'text': context.match.groups()[1].lower(),
             'photoid': [],
-            'add_date': dt.datetime.now().strftime('%Y-%m-%d'),
+            'add_date': actual_date.strftime('%Y-%m-%d'),
             'outdated': False
         }
         
@@ -321,8 +336,8 @@ if os.path.exists(os.environ['DB_FILENAME']):
 else:
     get_hw()
 
-updater.bot.send_message(chat_id=os.environ['TARGET_CHAT_ID'], text='Бот включен\nВерсия бота: '+os.environ['BOT_VERSION'])
-
 updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=os.environ['TOKEN'])
 updater.bot.set_webhook(os.environ['HOST_URL']+os.environ['TOKEN'])
 updater.idle()
+with open(os.environ['CACHE_FILENAME'], 'w') as writer:
+    writer.write(json.dumps(dict(updater.dispatcher.chat_data)))
