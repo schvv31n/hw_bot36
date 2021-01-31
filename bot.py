@@ -329,7 +329,8 @@ else:
     get_hw()
 
 updater.bot.send_message(chat_id=os.environ['CREATOR_ID'], text='Бот включен\nВерсия бота: '+os.environ['BOT_VERSION'])
-updater.start_polling(clean=True)
+updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=os.environ['TOKEN'])
+updater.bot.set_webhook(os.environ['HOST_URL']+os.environ['TOKEN'])
 updater.idle()
 
 with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
