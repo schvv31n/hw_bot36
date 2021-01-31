@@ -52,6 +52,6 @@ def get_hw():
            'valid': True,
            'content': json.loads(r3.data.decode())['days']+json.loads(r4.data.decode())['days']
           }
-    with open(os.environ['DB_FILENAME'], 'w') as hw_writer:
+    with open(os.environ['CACHE_FILENAME'], 'w') as hw_writer:
         hw_writer.write(json.dumps(res))
     return res
