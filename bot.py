@@ -53,6 +53,7 @@ def groupadmin_function(f):
 
 def local_hw_cleaner(index):
     def decorated(context):
+        print('initialized local_hw_cleaner')
         with open(os.environ['CACHE_FILENAME']) as hw_reader:
             hw = json.loads(hw_reader.read())
             
@@ -65,6 +66,16 @@ def local_hw_cleaner(index):
     return decorated
                 
 #фоновые функции
+
+def update_db():
+    print('updating local database...')
+    with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
+        with db.cursor() as c:
+            c.execute('DELETE FROM hw')
+            for k, v in dict(updater.dispatcher.chat_data)[int(os.environ['TARGET_CHAT_ID'])]['hw'].items():
+                c.execute('INSERT INTO hw VALUES (%s, %s, %s, %s)', (k, v['text'], '<d>'.join(v['photoid']), v['outdated']))
+            c.execute('SELECT * FROM hw')
+            print(c.fetchall())
 
 def errors(update, context=None):   
     try:
@@ -146,7 +157,8 @@ for i, timestamp in enumerate(LESSONS_STARTS):
         days=list(range(6))
     )
     
-updater.job_queue.run_repeating(lambda c: get_hw(), interval=3600, first=0)
+updater.job_queue.run_repeating(lambda c: get_hw(), interval=3600)
+updater.job_queue.run_repeating(lambda c: update_db(), interval=3600)
 
 #команды создателя
 
@@ -181,7 +193,7 @@ def force_schedule(update, context):
 updater.dispatcher.add_handler(tg_ext.CommandHandler('schedule', force_schedule))
 
 def info(update, context):
-    update.effective_chat.send_message(f"Версия бота: {os.environ['BOT_VERSION']}\nСоздатель: @schvv31n\nИсходный код: https://github.com/schvv31n/hw_bot36")
+    update.effective_chat.send_message(f"Версия бота: {os.environ['BOT_VERSION']}\nСоздатель: @schvv31n")
 updater.dispatcher.add_handler(tg_ext.CommandHandler('info', info))
 
 @handle_chat_data
@@ -333,11 +345,5 @@ updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), 
 updater.bot.set_webhook(os.environ['HOST_URL']+os.environ['TOKEN'])
 updater.idle()
 
-with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
-    with db.cursor() as c:
-        c.execute('DELETE FROM hw')
-        for k, v in dict(updater.dispatcher.chat_data)[int(os.environ['TARGET_CHAT_ID'])]['hw'].items():
-            c.execute('INSERT INTO hw VALUES (%s, %s, %s, %s)', (k, v['text'], '<d>'.join(v['photoid']), v['outdated']))
-        c.execute('SELECT * FROM hw')
-        print(c.fetchall())
+update_db()
 updater.bot.send_message(chat_id=os.environ['CREATOR_ID'], text='Бот отключен')
