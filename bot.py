@@ -13,6 +13,7 @@ import sys
 LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', 'физ', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'родн', 'инф']
 HW_SEARCH = re.compile(f"({'|'.join(LESSONS_SHORTCUTS)})", re.IGNORECASE)   #простой match обьект для поиска названий предметов
 LESSONS_STARTS = [{'hour': 8, 'minute': 10}, {'hour': 9, 'minute': 0}, {'hour': 9, 'minute': 55}, {'hour': 10, 'minute': 50}, {'hour': 11, 'minute': 45}, {'hour': 12, 'minute': 35}, {'hour': 13, 'minute': 25}]
+HTML_UNWRAPPER = re.compile('<[;,. /a-zA-Z0-9=\'"]*>', re.ASCII)
 
 #настройка бота и базы данных
 with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
@@ -24,10 +25,15 @@ with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
                 'media_groups': {}
             }
         }
-print(json.dumps(hw_dict))
+print(hw_dict)
 cache_loader = tg_ext.DictPersistence(chat_data_json=json.dumps(hw_dict))
 updater = tg_ext.Updater(token=os.environ['TOKEN'], use_context=True, persistence=cache_loader)
-print(cache_loader)
+
+def _unwrap_html(src):
+    res = src
+    for match in HTML_UNWRAPPER.findall(src):
+        res = res.replace(match, '')
+    return res
 
 #декораторы
 
@@ -131,7 +137,7 @@ def daily_schedule(context, force=False):
                     for link in local_hw['photoid']:
                         photos.append({'media': link, 'caption': lesson['discipline']})
                 
-                parsed_hw += f"<b>{lesson['discipline']}({lesson['time_begin'][:5]} - {lesson['time_end'][:5]})</b>\n<i>Тема:</i> {lesson['theme']}\n<i>Д/З{'(возможно устарело)' if outdated else ''}:</i> {lesson['homework']}\n\n"
+                parsed_hw += f"<b>{lesson['discipline']}({lesson['time_begin'][:5]} - {lesson['time_end'][:5]})</b>\n<i>Тема:</i> {lesson['theme']}\n<i>Д/З{'(возможно устарело)' if outdated else ''}:</i> {_unwrap_html(lesson['homework'])}\n\n"
             
             sent = updater.bot.send_message(chat_id=os.environ['TARGET_CHAT_ID'], text=parsed_hw, parse_mode='HTML')
             if photos:
@@ -201,10 +207,10 @@ def read_hw(update, context):
     with open(os.environ['CACHE_FILENAME']) as hw_reader:
         res = json.loads(hw_reader.read())
         
-    groups = context.match.groups()
-    keyword = groups[2] if groups[2] else groups[3]
     target_weekday = dt.datetime.now().weekday()
     end_weekday = None
+    groups = context.match.groups()
+    keyword = HW_SEARCH.search(groups[2] if groups[2] else groups[3]).groups()[0]
     if 'на сегодня' not in update.message.text.lower():
         if target_weekday==5:
             target_weekday += 1
@@ -222,14 +228,14 @@ def read_hw(update, context):
             for lesson in day['lessons']:
                 groups = context.match.groups()
                 if keyword in lesson['discipline'].lower():
-                    hw = [lesson['discipline'], day['date'], lesson['homework'], [i['url'] for i in lesson['materials']]]
+                    hw = [lesson['discipline'], day['date'], _unwrap_html(lesson['homework']), [i['url'] for i in lesson['materials']]]
                     break
             if hw:
                 break
                 
         if not hw:
             if 'на сегодня' not in update.message.text.lower():
-                db_hw = context.chat_data['hw'].get((groups[2] if groups[2] else groups[3]), '')
+                db_hw = context.chat_data['hw'].get(keyword, '')
                 if db_hw:
                     if db_hw['photoid']:
                         photos = [tg.InputMediaPhoto(media=db_hw['photoid'][0], caption=f"Д/З: {db_hw['text']}{'(устарело!)' if db_hw['outdated'] else ''}")]
@@ -242,13 +248,13 @@ def read_hw(update, context):
                     update.message.reply_text('Ошибка: предмет не найден')
             else:
                 update.message.reply_text('Ошибка: предмет не найден')
-                print(groups[2] if groups[2] else groups[3])
+                print(keyword)
             return
         elif hw[2]=='':
-            hw[2] = context.chat_data['hw'].get((groups[2] if groups[2] else groups[3]), '')
+            hw[2] = context.chat_data['hw'].get(keyword, '')
             
     else:
-        db_hw = context.chat_data['hw'].get((groups[2] if groups[2] else groups[3]), {})
+        db_hw = context.chat_data['hw'].get(keyword, {})
         if db_hw.get('photoid', None):
             photos = [tg.InputMediaPhoto(
                 media=db_hw['photoid'][0],
@@ -275,13 +281,13 @@ def read_hw(update, context):
         if hw[3]:
             photos = [tg.InputMediaPhoto(
                 media=hw[3][0],
-                caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]}"
+                caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {_unwrap_html(hw[2])}"
             )]
             for link in hw[3]:
                 photos.append(tg.InputMediaPhoto(media=link))
             update.message.reply_media_group(media=photos)
         else:
-            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]}")
+            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {_unwrap_html(hw[2])}")
         
 p1 = re.compile(f"\\b((что|че)\\b.*по.?({'|'.join(LESSONS_SHORTCUTS)})|по.?({'|'.join(LESSONS_SHORTCUTS)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p1), read_hw))
@@ -306,7 +312,7 @@ def write_hw(update, context):
                     actual_hw_text = hw_full_match.groups()[1]
                     
                 context.chat_data['hw'][hw_match.groups()[0].lower()] = {
-                    'text': actual_hw_text,
+                    'text': _unwrap_html(actual_hw_text),
                     'photoid': [update.message.photo[0].file_id],
                     'outdated': False
                 }
@@ -319,7 +325,7 @@ def write_hw(update, context):
                 update.message.reply_text('Д/З записано')
     else:
         context.chat_data['hw'][HW_SEARCH.search(update.message.text).groups()[0].lower()] = {
-            'text': context.match.groups()[1].lower(),
+            'text': _unwrap_html(context.match.groups()[1]),
             'photoid': [],
             'outdated': False
         }
