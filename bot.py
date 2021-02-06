@@ -59,15 +59,21 @@ def groupadmin_function(f):
 
 def local_hw_cleaner(index):
     def decorated(context):
-        print('initialized local_hw_cleaner')
+        context.bot.send_message(
+            chat_id=os.environ['CREATOR_ID'],
+            text='local_hw_cleaner запущен'
+        )
         with open(os.environ['CACHE_FILENAME']) as hw_reader:
             hw = json.loads(hw_reader.read())
             
         today = dt.datetime.now().weekday()
+        print('1')
         if hw['valid']:
             lessons = hw['content'][today]['lessons']
             lesson_shortcut = HW_SEARCH.search(lessons[min(len(lessons)-1, index)]['discipline']).groups()[0]
+            print('2')
             if context.dispatcher.chat_data[os.environ['TARGET_CHAT_ID']].get(lesson_shortcut):
+                print('3')
                 context.dispatcher.chat_data[os.environ['TARGET_CHAT_ID']][lesson_shortcut]['outdated'] = True
     return decorated
                 
@@ -303,7 +309,7 @@ def write_hw(update, context):
             )   #добавление фото из сообщения к дз с одинаковым id альбома, что и у нового фото
             
         else:
-            hw_match = HW_SEARCH.search(update.message.caption)
+            hw_match = HW_SEARCH.search(update.message.caption if update.message.caption else '')
             if hw_match:
                 actual_hw_text = ''
                 hw_full_match = p2.search(update.message.caption)
@@ -345,7 +351,7 @@ if os.path.exists(os.environ['CACHE_FILENAME']):
             get_hw()
 else:
     get_hw()
-
+    
 updater.bot.send_message(chat_id=os.environ['CREATOR_ID'], text='Бот включен\nВерсия бота: '+os.environ['BOT_VERSION'])
 updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=os.environ['TOKEN'])
 updater.bot.set_webhook(os.environ['HOST_URL']+os.environ['TOKEN'])
