@@ -72,7 +72,7 @@ def local_hw_cleaner(index):
             lessons = hw['content'][today]['lessons']
             lesson_shortcut = HW_SEARCH.search(lessons[min(len(lessons)-1, index)]['discipline']).groups()[0]
             print('2')
-            if context.dispatcher.chat_data[os.environ['TARGET_CHAT_ID']].get(lesson_shortcut):
+            if context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])].get(lesson_shortcut):
                 print('3')
                 context.dispatcher.chat_data[os.environ['TARGET_CHAT_ID']][lesson_shortcut]['outdated'] = True
     return decorated
