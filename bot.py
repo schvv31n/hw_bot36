@@ -10,10 +10,10 @@ from pytz import timezone
 import traceback
 import sys
 #константы
-LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', 'физ', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'родн', 'инф']
+LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', 'физ', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'инф']
 HW_SEARCH = re.compile(f"({'|'.join(LESSONS_SHORTCUTS)})", re.IGNORECASE)   #простой match обьект для поиска названий предметов
 LESSONS_STARTS = [{'hour': 8, 'minute': 10}, {'hour': 9, 'minute': 0}, {'hour': 9, 'minute': 55}, {'hour': 10, 'minute': 50}, {'hour': 11, 'minute': 45}, {'hour': 12, 'minute': 35}, {'hour': 13, 'minute': 25}]
-HTML_UNWRAPPER = re.compile(f'<[{''.join([bytes([i]).decode() for i in range(128) if i not in [60, 62]])}]*>')
+HTML_UNWRAPPER = re.compile(f"<[{ ''.join([bytes([i]).decode() for i in range(128) if i not in [60, 62]]) }]*>")
 
 #настройка бота и базы данных
 with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
@@ -21,7 +21,7 @@ with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
         c.execute('SELECT * FROM hw')
         hw_dict = {
             os.environ['TARGET_CHAT_ID']: {
-                'hw': {i[0]: {'text': i[1], 'photoid': i[2].split('<d>'), 'outdated': i[3]} for i in c.fetchall()},
+                'hw': {i[0]: {'text': i[1], 'photoid': i[2].split('<d>') if i[2] else [], 'outdated': i[3]} for i in c.fetchall()},
                 'media_groups': {}
             }
         }
@@ -59,35 +59,26 @@ def groupadmin_function(f):
 
 def local_hw_cleaner(index):
     def decorated(context):
-        context.bot.send_message(
-            chat_id=os.environ['CREATOR_ID'],
-            text='local_hw_cleaner запущен'
-        )
         with open(os.environ['CACHE_FILENAME']) as hw_reader:
             hw = json.loads(hw_reader.read())
             
         today = dt.datetime.now().weekday()
-        print('1')
         if hw['valid']:
             lessons = hw['content'][today]['lessons']
-            lesson_shortcut = HW_SEARCH.search(lessons[min(len(lessons)-1, index)]['discipline']).groups()[0]
-            print('2')
-            if context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])].get(lesson_shortcut):
-                print('3')
-                context.dispatcher.chat_data[os.environ['TARGET_CHAT_ID']][lesson_shortcut]['outdated'] = True
+            lesson_shortcut = HW_SEARCH.search(lessons[min(len(lessons)-1, index)]['discipline']).groups()[0].lower()
+            if context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'].get(lesson_shortcut):
+                context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'][lesson_shortcut]['outdated'] = True
     return decorated
                 
 #фоновые функции
 
 def update_db():
-    print('updating local database...')
     with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
         with db.cursor() as c:
             c.execute('DELETE FROM hw')
             for k, v in dict(updater.dispatcher.chat_data)[int(os.environ['TARGET_CHAT_ID'])]['hw'].items():
                 c.execute('INSERT INTO hw VALUES (%s, %s, %s, %s)', (k, v['text'], '<d>'.join(v['photoid']), v['outdated']))
             c.execute('SELECT * FROM hw')
-            print(c.fetchall())
 
 def errors(update, context=None):   
     try:
@@ -131,7 +122,7 @@ def daily_schedule(context, force=False):
         
             for lesson in hw['content'][target_weekday]['lessons']:
                 shortcut = HW_SEARCH.search(lesson['discipline']).groups()[0].lower()
-                local_hw = updater.dispatcher.chat_data[os.environ['TARGET_CHAT_ID']].get(shortcut, None)
+                local_hw = updater.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'].get(shortcut, None)
                 
                 outdated = False
                 if lesson['homework']:
@@ -276,13 +267,17 @@ def read_hw(update, context):
         return
     #отправка сообщения с данными
     if type(hw[2])==dict:
-        if hw[2]['photoid']!=[""]:
-            photos = [tg.InputMediaPhoto(media=hw[2]['photoid'][0], caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}{'(устарело!)' if hw[2]['outdated'] else ''}")]
+        print(hw)
+        if hw[2]['photoid']:
+            photos = [tg.InputMediaPhoto(
+                media=hw[2]['photoid'][0],
+                caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}{'(устарело!)' if hw[2]['outdated'] else ''}"
+            )]
             for link in hw[2]['photoid'][1:]:
                 photos.append(tg.InputMediaPhoto(media=link))
             update.message.reply_media_group(media=photos)
         else:
-            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}")
+            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}{'(устарело!)' if hw[2]['outdated'] else ''}")
     else:
         if hw[3]:
             photos = [tg.InputMediaPhoto(
