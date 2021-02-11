@@ -13,7 +13,7 @@ import sys
 LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', 'физ', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'родн', 'инф']
 HW_SEARCH = re.compile(f"({'|'.join(LESSONS_SHORTCUTS)})", re.IGNORECASE)   #простой match обьект для поиска названий предметов
 LESSONS_STARTS = [{'hour': 8, 'minute': 10}, {'hour': 9, 'minute': 0}, {'hour': 9, 'minute': 55}, {'hour': 10, 'minute': 50}, {'hour': 11, 'minute': 45}, {'hour': 12, 'minute': 35}, {'hour': 13, 'minute': 25}]
-HTML_UNWRAPPER = re.compile('<[;,. /a-zA-Z0-9=\'"]*>', re.ASCII)
+HTML_UNWRAPPER = re.compile(f'<[{''.join([bytes([i]).decode() for i in range(128) if i not in [60, 62]])}]*>')
 
 #настройка бота и базы данных
 with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
@@ -295,7 +295,7 @@ def read_hw(update, context):
         else:
             update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {_unwrap_html(hw[2])}")
         
-p1 = re.compile(f"\\b((что|че)\\b.*по.?({'|'.join(LESSONS_SHORTCUTS)})|по.?({'|'.join(LESSONS_SHORTCUTS)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
+p1 = re.compile(f"\\b((что|че|чё|чо|шо|що)\\b.*по.?({'|'.join(LESSONS_SHORTCUTS)})|по.?({'|'.join(LESSONS_SHORTCUTS)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p1), read_hw))
 
 p2 = re.compile(f"^({'|'.join(LESSONS_SHORTCUTS)}).*[:-] (.*)", re.IGNORECASE+re.MULTILINE)
