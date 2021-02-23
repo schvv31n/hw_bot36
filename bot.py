@@ -14,6 +14,7 @@ LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', '
 HW_SEARCH = re.compile(f"({'|'.join(LESSONS_SHORTCUTS)})", re.IGNORECASE)   #простой match обьект для поиска названий предметов
 LESSONS_STARTS = [{'hour': 8, 'minute': 10}, {'hour': 9, 'minute': 0}, {'hour': 9, 'minute': 55}, {'hour': 10, 'minute': 50}, {'hour': 11, 'minute': 45}, {'hour': 12, 'minute': 35}, {'hour': 13, 'minute': 25}]
 HTML_UNWRAPPER = re.compile(f"<[{ ''.join([bytes([i]).decode() for i in range(128) if i not in [60, 62]]) }]*>")
+NO_LESSONS = ['is_weekend', 'is_vacation', 'is_holiday']
 
 #настройка бота и базы данных
 with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
@@ -64,10 +65,11 @@ def local_hw_cleaner(index):
             
         today = dt.datetime.now().weekday()
         if hw['valid']:
-            lessons = hw['content'][today]['lessons']
-            lesson_shortcut = HW_SEARCH.search(lessons[min(len(lessons)-1, index)]['discipline']).groups()[0].lower()
-            if context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'].get(lesson_shortcut):
-                context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'][lesson_shortcut]['outdated'] = True
+            if hw['content'][today].keys()[1] not in NO_LESSONS:
+                lessons = hw['content'][today]['lessons']
+                lesson_shortcut = HW_SEARCH.search(lessons[min(len(lessons)-1, index)]['discipline']).groups()[0].lower()
+                if context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'].get(lesson_shortcut):
+                    context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'][lesson_shortcut]['outdated'] = True
     return decorated
                 
 #фоновые функции
@@ -116,7 +118,7 @@ def daily_schedule(context, force=False):
     target_weekday += 1
           
     if hw['valid']:
-        if list(hw['content'][target_weekday].keys())[1] not in ['is_weekend', 'is_vacation']:
+        if list(hw['content'][target_weekday].keys())[1] not in NO_LESSONS:
             parsed_hw = f"Расписание на {hw['content'][target_weekday]['date']}:\n"
             photos = []
         
@@ -219,7 +221,7 @@ def read_hw(update, context):
     hw = None
     if res['valid']:
         for day in res['content'][target_weekday:end_weekday]:
-            if list(day.keys())[1] in ['is_weekend', 'is_vacation']:
+            if list(day.keys())[1] in NO_LESSONS:
                 continue
                 
             for lesson in day['lessons']:
@@ -346,7 +348,7 @@ if os.path.exists(os.environ['CACHE_FILENAME']):
             get_hw()
 else:
     get_hw()
-    
+
 updater.bot.send_message(chat_id=os.environ['CREATOR_ID'], text='Бот включен\nВерсия бота: '+os.environ['BOT_VERSION'])
 updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=os.environ['TOKEN'])
 updater.bot.set_webhook(os.environ['HOST_URL']+os.environ['TOKEN'])
