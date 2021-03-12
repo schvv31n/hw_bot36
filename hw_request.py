@@ -1,4 +1,4 @@
-from urllib3 import PoolManager, disable_warnings
+from urllib3 import PoolManager, disable_warnings, Timeout
 from datetime import datetime, timedelta
 import re
 import json
@@ -9,10 +9,13 @@ def get_hw():
     this_week = datetime.now()   #получение нынешнего времени
     next_week = this_week+timedelta(days=7)        #определение даты для получения информации на следующею неделю
     
-    with PoolManager(cert_reqs='CERT_NONE') as http:
+    with PoolManager(cert_reqs='CERT_NONE', timeout=Timeout(connect=5.0)) as http:
         
-        r = http.request('POST', 'https://sh-open.ris61edu.ru/auth/login',
-                         fields={'login_login': '36_Курдов_Тимофей_36', 'login_password': 'faYUzEUK'}) #регистрация на сайте
+        try:
+            r = http.request('POST', 'https://sh-open.ris61edu.ru/auth/login',
+                             fields={'login_login': '36_Курдов_Тимофей_36', 'login_password': 'faYUzEUK'}) #регистрация на сайте
+        except:
+            return {'valid': False, 'error': 'Не удается подключиться к сайту'}
         print(r.status)
         if r.status>=400:
             return {'valid': False, 'error': r.geturl()[28:]+'->'+str(r.status)}   #если возникла ошибка, возврат ошибки 
@@ -52,6 +55,6 @@ def get_hw():
            'valid': True,
            'content': json.loads(r3.data.decode())['days']+json.loads(r4.data.decode())['days']
           }
-    with open(os.environ['DB_FILENAME'], 'w') as hw_writer:
+    with open(os.environ['CACHE_FILENAME'], 'w') as hw_writer:
         hw_writer.write(json.dumps(res))
     return res
