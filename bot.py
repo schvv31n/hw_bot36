@@ -9,12 +9,21 @@ from hw_request import get_hw
 from pytz import timezone
 import traceback
 import sys
+import time
 #константы
-LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', 'физ', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'инф']
+LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', 'физр', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'инф']
 HW_SEARCH = re.compile(f"({'|'.join(LESSONS_SHORTCUTS)})", re.IGNORECASE)   #простой match обьект для поиска названий предметов
 LESSONS_STARTS = [{'hour': 8, 'minute': 10}, {'hour': 9, 'minute': 0}, {'hour': 9, 'minute': 55}, {'hour': 10, 'minute': 50}, {'hour': 11, 'minute': 45}, {'hour': 12, 'minute': 35}, {'hour': 13, 'minute': 25}]
 HTML_UNWRAPPER = re.compile(f"<[{ ''.join([bytes([i]).decode() for i in range(128) if i not in [60, 62]]) }]*>")
 NO_LESSONS = ['is_weekend', 'is_vacation', 'is_holiday']
+EMPTY_CHATDATA = {'hw': {},
+                  'media_groups': {},
+                  'temp': {
+                      'media_id': '',
+                      'photoids': [],
+                      'hw': {}
+                  }
+                 }
 
 #настройка бота и базы данных
 with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
@@ -22,13 +31,23 @@ with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
         c.execute('SELECT * FROM hw')
         hw_dict = {
             os.environ['TARGET_CHAT_ID']: {
-                'hw': {i[0]: {'text': i[1], 'photoid': i[2].split('<d>') if i[2] else [], 'outdated': i[3]} for i in c.fetchall()},
-                'media_groups': {}
+                'hw': {i[0]: {'text': i[1],
+                              'photoid': i[2].split('<d>') if i[2] else [],
+                              'outdated': i[3]
+                             } for i in c.fetchall()
+                      },
+                'media_groups': {},
+                'temp': {
+                    'media_id': '',
+                    'photoids': [],
+                    'hw': {}
+                }
             }
         }
 print(hw_dict)
 cache_loader = tg_ext.DictPersistence(chat_data_json=json.dumps(hw_dict))
-updater = tg_ext.Updater(token=os.environ['TOKEN'], use_context=True, persistence=cache_loader)
+defaults = tg_ext.Defaults(quote=True)
+updater = tg_ext.Updater(token=os.environ['TOKEN'], use_context=True, persistence=cache_loader, defaults=defaults)
 
 def _unwrap_html(src):
     res = src
@@ -40,9 +59,8 @@ def _unwrap_html(src):
 
 def handle_chat_data(f):
     def decorated(update, context):
-        for key in ['hw', 'media_groups']:
-            if not context.chat_data.get(key):
-                context.chat_data[key] = {}
+        if not context.chat_data:
+            context.chat_data.update(EMPTY_CHATDATA)
         f(update, context)
     return decorated
 
@@ -65,7 +83,7 @@ def local_hw_cleaner(index):
             
         today = dt.datetime.now().weekday()
         if hw['valid']:
-            if list(hw['content'][today].keys())[1] not in NO_LESSONS:
+            if hw['content'][today].keys()[1] not in NO_LESSONS:
                 lessons = hw['content'][today]['lessons']
                 lesson_shortcut = HW_SEARCH.search(lessons[min(len(lessons)-1, index)]['discipline']).groups()[0].lower()
                 if context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'].get(lesson_shortcut):
@@ -81,6 +99,13 @@ def update_db():
             for k, v in dict(updater.dispatcher.chat_data)[int(os.environ['TARGET_CHAT_ID'])]['hw'].items():
                 c.execute('INSERT INTO hw VALUES (%s, %s, %s, %s)', (k, v['text'], '<d>'.join(v['photoid']), v['outdated']))
             c.execute('SELECT * FROM hw')
+            
+def delete_keyboard(msg):
+    time.sleep(10)
+    try:
+        msg.edit_reply_markup()
+    except:
+        pass
 
 def errors(update, context=None):   
     try:
@@ -197,100 +222,22 @@ def force_schedule(update, context):
     daily_schedule(context, force=True)
 updater.dispatcher.add_handler(tg_ext.CommandHandler('schedule', force_schedule))
 
+#общие команды
+
 def info(update, context):
     update.effective_chat.send_message(f"Версия бота: {os.environ['BOT_VERSION']}\nСоздатель: @schvv31n")
 updater.dispatcher.add_handler(tg_ext.CommandHandler('info', info))
 
 @handle_chat_data
 def read_hw(update, context):
-    with open(os.environ['CACHE_FILENAME']) as hw_reader:
-        res = json.loads(hw_reader.read())
-        
-    target_weekday = dt.datetime.now().weekday()
-    end_weekday = None
-    groups = context.match.groups()
-    keyword = HW_SEARCH.search(groups[2] if groups[2] else groups[3]).groups()[0]
-    if 'на сегодня' not in update.message.text.lower():
-        if target_weekday==5:
-            target_weekday += 1
-        target_weekday += 1
-    else:
-        end_weekday = target_weekday + 1
+    keyword = HW_SEARCH.search(update.message.text).groups()[0]
+    buttons = tg.InlineKeyboardMarkup([
+        [tg.InlineKeyboardButton(text='Из электронного дневника', callback_data=f"READ_HW#EXT#{keyword}#{'1' if 'сегодня' in update.message.text else ''}")],
+        [tg.InlineKeyboardButton(text='Из этого чата', callback_data=f"READ_HW#LOCAL#{keyword}")],
+        [tg.InlineKeyboardButton(text='Отмена', callback_data="READ_HW#CANCEL")]
+    ])
     
-    #парсинг json-данных с сайта
-    hw = None
-    if res['valid']:
-        for day in res['content'][target_weekday:end_weekday]:
-            if list(day.keys())[1] in NO_LESSONS:
-                continue
-                
-            for lesson in day['lessons']:
-                groups = context.match.groups()
-                if keyword in lesson['discipline'].lower():
-                    hw = [lesson['discipline'], day['date'], _unwrap_html(lesson['homework']), [i['url'] for i in lesson['materials']]]
-                    break
-            if hw:
-                break
-                
-        if not hw:
-            if 'на сегодня' not in update.message.text.lower():
-                db_hw = context.chat_data['hw'].get(keyword, '')
-                if db_hw:
-                    if db_hw['photoid']:
-                        photos = [tg.InputMediaPhoto(media=db_hw['photoid'][0], caption=f"Д/З: {db_hw['text']}{'(устарело!)' if db_hw['outdated'] else ''}")]
-                        for link in db_hw['photoid'][1:]:
-                            photos.append(tg.InputMediaPhoto(media=link))
-                        update.message.reply_media_group(media=photos)
-                    else:
-                        update.message.reply_text('Д/З: '+db_hw['text'])
-                else:
-                    update.message.reply_text('Ошибка: предмет не найден')
-            else:
-                update.message.reply_text('Ошибка: предмет не найден')
-                print(keyword)
-            return
-        elif hw[2]=='':
-            hw[2] = context.chat_data['hw'].get(keyword, '')
-            
-    else:
-        db_hw = context.chat_data['hw'].get(keyword, {})
-        if db_hw.get('photoid', None):
-            photos = [tg.InputMediaPhoto(
-                media=db_hw['photoid'][0],
-                caption=f"Д/З: {db_hw['text']}{'(устарело!)' if db_hw['outdated'] else ''}"
-            )]
-            for link in db_hw['photoid'][1:]:
-                photos.append(tg.InputMediaPhoto(media=link))
-            update.message.reply_media_group(media=photos)
-        elif db_hw.get('text', None):
-            update.message.reply_text('Д/З: '+db_hw['text']+('(устарело!)' if db_hw['outdated'] else ''))
-        else:
-            update.message.reply_text('Ошибка: '+res['error'])
-        return
-    #отправка сообщения с данными
-    if type(hw[2])==dict:
-        print(hw)
-        if hw[2]['photoid']:
-            photos = [tg.InputMediaPhoto(
-                media=hw[2]['photoid'][0],
-                caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}{'(устарело!)' if hw[2]['outdated'] else ''}"
-            )]
-            for link in hw[2]['photoid'][1:]:
-                photos.append(tg.InputMediaPhoto(media=link))
-            update.message.reply_media_group(media=photos)
-        else:
-            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {hw[2]['text']}{'(устарело!)' if hw[2]['outdated'] else ''}")
-    else:
-        if hw[3]:
-            photos = [tg.InputMediaPhoto(
-                media=hw[3][0],
-                caption=f"Д/З по предмету {hw[0]} на {hw[1]}: {_unwrap_html(hw[2])}"
-            )]
-            for link in hw[3]:
-                photos.append(tg.InputMediaPhoto(media=link))
-            update.message.reply_media_group(media=photos)
-        else:
-            update.message.reply_text(f"Д/З по предмету {hw[0]} на {hw[1]}: {_unwrap_html(hw[2])}")
+    update.message.reply_text(text='Откуда получить Д/З?', reply_markup=buttons)
         
 p1 = re.compile(f"\\b((что|че|чё|чо|шо|що)\\b.*по.?({'|'.join(LESSONS_SHORTCUTS)})|по.?({'|'.join(LESSONS_SHORTCUTS)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p1), read_hw))
@@ -308,38 +255,161 @@ def write_hw(update, context):
         else:
             hw_match = HW_SEARCH.search(update.message.caption if update.message.caption else '')
             if hw_match:
+                keyword = hw_match.groups()[0].lower()
+                #HW_SEARCH.search(update.message.text).groups()[0].lower()
+                prev_hw = context.chat_data['hw'].get(keyword, {})
                 actual_hw_text = ''
                 hw_full_match = p2.search(update.message.caption)
                 
                 if hw_full_match:
                     actual_hw_text = hw_full_match.groups()[1]
                     
-                context.chat_data['hw'][hw_match.groups()[0].lower()] = {
+                if context.chat_data['temp']['media_id'] == update.message.media_group_id:
+                    temp_photos = context.chat_data['temp']['photoids']
+                else:
+                    temp_photos = []
+                    
+                context.chat_data['hw'][keyword] = {
                     'text': _unwrap_html(actual_hw_text),
-                    'photoid': [update.message.photo[0].file_id],
+                    'photoid': [update.message.photo[0].file_id]+temp_photos,
                     'outdated': False
                 }
+                context.chat_data['temp']['hw'].update({update.message.message_id: prev_hw})
                 
                 reverse = {b: a for a, b in context.chat_data['media_groups'].items()}
-                if context.chat_data['media_groups'].get(reverse.get(hw_match.groups()[0].lower(), None), None):
-                    del context.chat_data['media_groups'][reverse[hw_match.groups()[0].lower()]]
-                context.chat_data['media_groups'][update.message.media_group_id] = hw_match.groups()[0].lower()
+                if context.chat_data['media_groups'].get(reverse.get(keyword, None), None):
+                    del context.chat_data['media_groups'][reverse[keyword]]
+                context.chat_data['media_groups'][update.message.media_group_id] = keyword
                 
-                update.message.reply_text('Д/З записано')
+                button = tg.InlineKeyboardMarkup([[
+                    tg.InlineKeyboardButton(text='Отмена', callback_data=f"WRITE_HW#CANCEL#{keyword}")
+                ]])
+        
+                answer = update.message.reply_text('Д/З записано', reply_markup=button)
+                updater.dispatcher.run_async(delete_keyboard, answer)
+                
+            else:
+                print('entry')
+                if context.chat_data['temp']['media_id'] == update.message.media_group_id:
+                    print('entry1')
+                    context.chat_data['temp']['photoids'].append(update.message.photo[0].file_id)
+                else:
+                    print('entry2')
+                    if context.chat_data['temp']['media_id']:
+                        print('entry21')
+                        context.chat_data['temp']['photoids'] = [update.message.photo[0].file_id]
+                    else:
+                        context.chat_data['temp']['photoids'].append(update.message.photo[0].file_id)
+                    context.chat_data['temp']['media_id'] = update.message.media_group_id
     else:
-        context.chat_data['hw'][HW_SEARCH.search(update.message.text).groups()[0].lower()] = {
+        keyword = context.match.groups()[0].lower()
+        #HW_SEARCH.search(update.message.text).groups()[0].lower()
+        prev_hw = context.chat_data['hw'].get(keyword, {})
+        
+        context.chat_data['hw'][keyword] = {
             'text': _unwrap_html(context.match.groups()[1]),
             'photoid': [],
             'outdated': False
         }
+        context.chat_data['temp']['hw'].update({update.message.message_id: prev_hw})
         
-        print(context.chat_data['media_groups'])
         reverse = {b: a for a, b in context.chat_data['media_groups'].items()}
-        if context.chat_data['media_groups'].get(reverse.get(context.match.groups()[0].lower(), None), None):
-            del context.chat_data['media_groups'][reverse[context.match.groups()[0].lower()]]
+        if context.chat_data['media_groups'].get(reverse.get(keyword)):
+            del context.chat_data['media_groups'][reverse[keyword]]
         
-        update.message.reply_text('Д/З записано')
+        button = tg.InlineKeyboardMarkup([[
+            tg.InlineKeyboardButton(text='Отмена', callback_data=f"WRITE_HW#CANCEL#{keyword}")
+        ]])
+        
+        answer = update.message.reply_text('Д/З записано', reply_markup=button)
+        updater.dispatcher.run_async(delete_keyboard, answer)
+        
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p2) | tg_ext.Filters.photo, write_hw))
+
+def get_external_hw(subject, for_today=False):
+    with open('hw.json') as reader:
+        hw = json.loads(reader.read())
+        
+    target_weekday = dt.datetime.now().weekday()
+    end_weekday = None
+    if not for_today:
+        if target_weekday==5:
+            target_weekday += 1
+        target_weekday += 1
+    else:
+        end_weekday = target_weekday + 1    
+    date = ''
+    full_name = ''
+    text = ''
+    photos = []
+        
+    if hw['valid']:
+        for day in hw['content'][target_weekday:end_weekday]:
+            if list(day.keys())[1] in NO_LESSONS:
+                continue
+                
+            for lesson in day['lessons']:
+                if subject in lesson['discipline'].lower():
+                    date = lesson['date']
+                    full_name = lesson['discipline']
+                    text = _unwrap_html(lesson['homework'])
+                    photos = [i['url'] for i in lesson['materials']]
+                    
+            if subject in full_name.lower():
+                break
+                
+        if date:
+            return (f'Д/З по предмету {full_name} на {date}: {text}', photos)
+        else:
+            return ('Предмет не найден', [])
+    
+    else:
+        return (hw['error'], [])
+    
+def get_local_hw(subject, chat_data):
+    res = chat_data['hw'].get(subject, {'text': '', 'photoid': []})
+    print(res, type(res))
+    return ('Д/З: '+res['text'], res['photoid'])
+
+def button_callback(update, context):
+    print(update.callback_query.data)
+    if update.callback_query.message.reply_to_message.from_user == update.callback_query.from_user:
+        args = update.callback_query.data.split('#')
+        
+        if args[0] == 'READ_HW':
+            if args[1] == 'CANCEL':
+                update.callback_query.message.delete()
+            else:
+                if args[1] == 'EXT':
+                    res = get_external_hw(args[2], for_today=bool(args[3]))
+                elif args[1] == 'LOCAL':
+                    res = get_local_hw(args[2], context.chat_data)
+                    
+                if res[1]:
+                    req_msg = update.callback_query.message.reply_to_message
+                    update.callback_query.message.delete()
+                    
+                    photo_objs = [tg.InputMediaPhoto(media=res[1][0], caption=res[0])]
+                    photo_objs += [tg.InputMediaPhoto(media=i) for i in res[1][1:]]
+                    
+                    req_msg.reply_media_group(media=photo_objs)
+                else:
+                    update.callback_query.message.edit_text(text=res[0])
+                    
+        elif args[0] == 'WRITE_HW':
+            if args[1] == 'CANCEL':
+                prev_hw = context.chat_data['temp']['hw'][update.callback_query.message.reply_to_message.message_id]
+                print(prev_hw, type(prev_hw))
+                if prev_hw:
+                    context.chat_data['hw'][args[2]] = prev_hw
+                else:
+                    del context.chat_data['hw'][args[2]]
+                del context.chat_data['temp']['hw'][update.callback_query.message.reply_to_message.message_id]
+                    
+                update.callback_query.message.delete()
+updater.dispatcher.add_handler(tg_ext.CallbackQueryHandler(button_callback))
+        
+
 
 if os.path.exists(os.environ['CACHE_FILENAME']):
     with open(os.environ['CACHE_FILENAME']) as cache:
