@@ -11,6 +11,7 @@ import traceback
 import sys
 import time
 #константы
+SPECIAL_NAMES = {'Физическая культура': 'Физра'}
 LESSONS_SHORTCUTS = ['англ', 'алг', 'био', 'геог', 'физик', 'физр', 'лит', 'хим', 'геом', 'немец', 'фр', 'ист', 'общ', 'рус', 'тех', 'обж', 'инф']
 HW_SEARCH = re.compile(f"({'|'.join(LESSONS_SHORTCUTS)})", re.IGNORECASE)   #простой match обьект для поиска названий предметов
 LESSONS_STARTS = [{'hour': 8, 'minute': 10}, {'hour': 9, 'minute': 0}, {'hour': 9, 'minute': 55}, {'hour': 10, 'minute': 50}, {'hour': 11, 'minute': 45}, {'hour': 12, 'minute': 35}, {'hour': 13, 'minute': 25}]
@@ -46,7 +47,7 @@ with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
         }
 print(hw_dict)
 cache_loader = tg_ext.DictPersistence(chat_data_json=json.dumps(hw_dict))
-defaults = tg_ext.Defaults(quote=True)
+defaults = tg_ext.Defaults(quote=True, tzinfo=timezone('Europe/Moscow'))
 updater = tg_ext.Updater(token=os.environ['TOKEN'], use_context=True, persistence=cache_loader, defaults=defaults)
 
 def _unwrap_html(src):
@@ -100,12 +101,13 @@ def update_db():
                 c.execute('INSERT INTO hw VALUES (%s, %s, %s, %s)', (k, v['text'], '<d>'.join(v['photoid']), v['outdated']))
             c.execute('SELECT * FROM hw')
             
-def delete_keyboard(msg):
-    time.sleep(10)
+def delete_keyboard(context):
     try:
-        msg.edit_reply_markup()
+        context.job.context.edit_reply_markup()
     except:
         pass
+    else:
+        del context.chat_data['temp']['hw'][context.job.context.message_id]
 
 def errors(update, context=None):   
     try:
@@ -148,7 +150,8 @@ def daily_schedule(context, force=False):
             photos = []
         
             for lesson in hw['content'][target_weekday]['lessons']:
-                shortcut = HW_SEARCH.search(lesson['discipline']).groups()[0].lower()
+                full_name = SPECIAL_NAMES.get(lesson['discipline'], lesson['discipline'])
+                shortcut = HW_SEARCH.search(full_name.lower()).groups()[0]
                 local_hw = updater.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'].get(shortcut, None)
                 
                 outdated = False
@@ -176,14 +179,14 @@ def daily_schedule(context, force=False):
                 updater.bot.send_message(chat_id=os.environ['TARGET_CHAT_ID'], text='Ошибка: завтра выходной/каникулы')
 updater.job_queue.run_daily(
     daily_schedule,
-    dt.time(hour=15, tzinfo=timezone('Europe/Moscow')),
+    dt.time(hour=15),
     days=list(range(6))
 )
 
 for i, timestamp in enumerate(LESSONS_STARTS):
     updater.job_queue.run_daily(
         local_hw_cleaner(i),
-        dt.time(**timestamp, tzinfo=timezone('Europe/Moscow')),
+        dt.time(**timestamp),
         days=list(range(6))
     )
     
@@ -210,11 +213,12 @@ updater.dispatcher.add_handler(tg_ext.CommandHandler('exec', exec_script))
 @groupadmin_function
 def update_hw(update, context):
     sent = update.effective_chat.send_message('Обновляю...')
+    update_db()
     resp = get_hw()
     if resp['valid']:
         sent.edit_text('Д/З обновлено')
     else:
-        sent.edit_text('Ошибка: '+resp['error'])
+        sent.edit_text(resp['error'])
 updater.dispatcher.add_handler(tg_ext.CommandHandler('force_update', update_hw))
 
 @groupadmin_function    
@@ -286,7 +290,7 @@ def write_hw(update, context):
                 ]])
         
                 answer = update.message.reply_text('Д/З записано', reply_markup=button)
-                updater.dispatcher.run_async(delete_keyboard, answer)
+                updater.job_queue.run_once(delete_keyboard, when=10, context=answer)
                 
             else:
                 print('entry')
@@ -322,9 +326,38 @@ def write_hw(update, context):
         ]])
         
         answer = update.message.reply_text('Д/З записано', reply_markup=button)
-        updater.dispatcher.run_async(delete_keyboard, answer)
+        updater.job_queue.run_once(delete_keyboard, when=10, context=answer)
         
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p2) | tg_ext.Filters.photo, write_hw))
+
+@handle_chat_data
+def delete_hw(update, context):
+    subject_index = update.message.text.find('#')
+    if subject_index == -1:
+        update.message.reply_text('Ошибка: нет названия предмета\nСинтаксис команды: <code>/delete #предмет</code>',
+                                  parse_mode='HTML')
+        return
+    subject = update.message.text[subject_index+1:]
+    shortcut = HW_SEARCH.search(subject.lower())
+    if not shortcut:
+        update.message.reply_text('Ошибка: предмет не найден')
+        return
+    else:
+        shortcut = shortcut.groups()[0]
+    prev_hw = context.chat_data['hw'].get(shortcut)
+    if not prev_hw:
+        update.message.reply_text('Ошибка: Д/З по указанному предмету не найдено')
+        return
+    
+    del context.chat_data['hw'][shortcut]
+    context.chat_data['temp']['hw'][update.message.message_id] = prev_hw
+    
+    button = tg.InlineKeyboardMarkup([[
+        tg.InlineKeyboardButton(text='Отмена', callback_data=f"DEL_HW#CANCEL#{shortcut}")
+    ]])
+    answer = update.message.reply_text(text='Д/З удалено', reply_markup=button)
+    updater.job_queue.run_once(delete_keyboard, when=10, context=answer)
+updater.dispatcher.add_handler(tg_ext.CommandHandler('delete', delete_hw))
 
 def get_external_hw(subject, for_today=False):
     with open('hw.json') as reader:
@@ -368,7 +401,6 @@ def get_external_hw(subject, for_today=False):
     
 def get_local_hw(subject, chat_data):
     res = chat_data['hw'].get(subject, {'text': '', 'photoid': []})
-    print(res, type(res))
     return ('Д/З: '+res['text'], res['photoid'])
 
 def button_callback(update, context):
@@ -398,18 +430,23 @@ def button_callback(update, context):
                     
         elif args[0] == 'WRITE_HW':
             if args[1] == 'CANCEL':
-                prev_hw = context.chat_data['temp']['hw'][update.callback_query.message.reply_to_message.message_id]
-                print(prev_hw, type(prev_hw))
+                request_msgid = update.callback_query.message.reply_to_message.message_id
+                prev_hw = context.chat_data['temp']['hw'][request_msgid]
                 if prev_hw:
                     context.chat_data['hw'][args[2]] = prev_hw
                 else:
                     del context.chat_data['hw'][args[2]]
-                del context.chat_data['temp']['hw'][update.callback_query.message.reply_to_message.message_id]
-                    
+                del context.chat_data['temp']['hw'][request_msgid]
+        elif args[0] == 'DEL_HW':
+            if args[1] == 'CANCEL':
+                request_msgid = update.callback_query.message.reply_to_message.message_id
+                prev_hw = context.chat_data['temp']['hw'][request_msgid]
+                print(prev_hw)
+                context.chat_data['hw'][args[2]] = prev_hw
+                del context.chat_data['temp']['hw'][request_msgid]    
                 update.callback_query.message.delete()
 updater.dispatcher.add_handler(tg_ext.CallbackQueryHandler(button_callback))
         
-
 
 if os.path.exists(os.environ['CACHE_FILENAME']):
     with open(os.environ['CACHE_FILENAME']) as cache:
@@ -418,7 +455,7 @@ if os.path.exists(os.environ['CACHE_FILENAME']):
             get_hw()
 else:
     get_hw()
-
+    
 updater.bot.send_message(chat_id=os.environ['CREATOR_ID'], text='Бот включен\nВерсия бота: '+os.environ['BOT_VERSION'])
 updater.start_webhook(listen='0.0.0.0', port=int(os.environ.get('PORT', 5000)), url_path=os.environ['TOKEN'])
 updater.bot.set_webhook(os.environ['HOST_URL']+os.environ['TOKEN'])
