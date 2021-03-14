@@ -108,6 +108,7 @@ def delete_keyboard(context):
         pass
     else:
         del context.chat_data['temp']['hw'][context.job.context.message_id]
+        del context.bot_data[context.job.context.message_id]
 
 def errors(update, context=None):   
     try:
@@ -241,7 +242,8 @@ def read_hw(update, context):
         [tg.InlineKeyboardButton(text='Отмена', callback_data="READ_HW#CANCEL")]
     ])
     
-    update.message.reply_text(text='Откуда получить Д/З?', reply_markup=buttons)
+    answer = update.message.reply_text(text='Откуда получить Д/З?', reply_markup=buttons)
+    context.bot_data.update({answer.message_id: answer})
         
 p1 = re.compile(f"\\b((что|че|чё|чо|шо|що)\\b.*по.?({'|'.join(LESSONS_SHORTCUTS)})|по.?({'|'.join(LESSONS_SHORTCUTS)}).+(что|че)[- ]?(то)?.*зад.*)", re.IGNORECASE)
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p1), read_hw))
@@ -291,6 +293,7 @@ def write_hw(update, context):
         
                 answer = update.message.reply_text('Д/З записано', reply_markup=button)
                 updater.job_queue.run_once(delete_keyboard, when=10, context=answer)
+                context.bot_data.update({answer.message_id: answer})
                 
             else:
                 print('entry')
@@ -327,6 +330,7 @@ def write_hw(update, context):
         
         answer = update.message.reply_text('Д/З записано', reply_markup=button)
         updater.job_queue.run_once(delete_keyboard, when=10, context=answer)
+        context.bot_data.update({answer.message_id: answer})
         
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p2) | tg_ext.Filters.photo, write_hw))
 
@@ -357,6 +361,7 @@ def delete_hw(update, context):
     ]])
     answer = update.message.reply_text(text='Д/З удалено', reply_markup=button)
     updater.job_queue.run_once(delete_keyboard, when=10, context=answer)
+    context.bot_data['keyboards'].update({answer.message_id: answer})
 updater.dispatcher.add_handler(tg_ext.CommandHandler('delete', delete_hw))
 
 def get_external_hw(subject, for_today=False):
@@ -445,6 +450,7 @@ def button_callback(update, context):
                 context.chat_data['hw'][args[2]] = prev_hw
                 del context.chat_data['temp']['hw'][request_msgid]    
                 update.callback_query.message.delete()
+        del context.bot_data[update.callback_query.message.message_id]
 updater.dispatcher.add_handler(tg_ext.CallbackQueryHandler(button_callback))
         
 
@@ -462,4 +468,6 @@ updater.bot.set_webhook(os.environ['HOST_URL']+os.environ['TOKEN'])
 updater.idle()
 
 update_db()
+for msg in updater.dispatcher.bot_data.values():
+    msg.edit_reply_markup()
 updater.bot.send_message(chat_id=os.environ['CREATOR_ID'], text='Бот отключен')
