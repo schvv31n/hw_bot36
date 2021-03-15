@@ -7,7 +7,8 @@ import os
 def get_hw():
     disable_warnings()   #отключение предупреждений о незащищенном соединении
     this_week = datetime.now()   #получение нынешнего времени
-    next_week = this_week+timedelta(days=7)        #определение даты для получения информации на следующею неделю
+    next_week = this_week+timedelta(days=7)   #определение даты для получения информации на следующею неделю
+    codes = []
     
     with PoolManager(cert_reqs='CERT_NONE', timeout=Timeout(connect=5.0)) as http:
         
@@ -21,6 +22,8 @@ def get_hw():
         print(r.status)
         if r.status>=400 and not error:
             error = f'Ошибка сервера: не удалось авторизоваться(код ошибки: {r.status})'
+        codes.append(r.status)
+        
             
         cookies = [i for i in re.split('[;,] ', r.getheader('Set-Cookie')) if re.match('(sessionid|NodeID)', i)]
         r2 = http.request('GET', 'https://sh-open.ris61edu.ru/personal-area/#diary',
@@ -29,6 +32,7 @@ def get_hw():
         print(r2.status)
         if r2.status>=400 and not error:
             error = f'Ошибка сервера: не удалось войти в главное меню сайта(код ошибки: {r.status})'
+        codes.append(r2.status)
         
         r3 = http.request('POST', 'https://sh-open.ris61edu.ru/api/ScheduleService/GetDiary',
                     fields={'date': this_week.strftime('%Y-%m-%d'), 'is_diary': 'true'},
@@ -39,6 +43,7 @@ def get_hw():
         print(r3.status)
         if r3.status>=400 and not error:
             error = 'Ошибка сервера: не удалось кешировать данные'
+        codes.append(r3.status)
         
         r4 = http.request('POST', 'https://sh-open.ris61edu.ru/api/ScheduleService/GetDiary',
                     fields={'date': next_week.strftime('%Y-%m-%d'), 'is_diary': 'true'},
@@ -49,6 +54,8 @@ def get_hw():
         print(r4.status)
         if r4.status>=400 and not error:
             error = 'Ошибка сервера: не удалось кешировать данные'
+        codes.append(r4.status)
+        
     if error:
         res = {'read_at': datetime.now().isoformat(),
                'valid': False,
@@ -61,4 +68,4 @@ def get_hw():
               }
     with open(os.environ['CACHE_FILENAME'], 'w') as hw_writer:
         hw_writer.write(json.dumps(res))
-    return res
+    return codes

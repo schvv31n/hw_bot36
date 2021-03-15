@@ -45,6 +45,9 @@ with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
                 }
             }
         }
+        
+        c.execute('SELECT * FROM temp')
+        hw_dict[os.environ['TARGET_CHAT_ID']]['temp']['hw'] = {i[0]: json.loads(i[1]) for i in c.fetchall()}
 print(hw_dict)
 cache_loader = tg_ext.DictPersistence(chat_data_json=json.dumps(hw_dict))
 defaults = tg_ext.Defaults(quote=True, tzinfo=timezone('Europe/Moscow'))
@@ -63,6 +66,7 @@ def handle_chat_data(f):
         if not context.chat_data:
             context.chat_data.update(EMPTY_CHATDATA)
         f(update, context)
+        
     return decorated
 
 def groupadmin_function(f):
@@ -72,9 +76,9 @@ def groupadmin_function(f):
             if update.message.from_user.id in [i.user.id for i in admins]:
                 f(update, context)
             else:
-                update.message.reply_text('Данная функция доступна только админам группы')
+                update.message.reply_text('Данная команда доступна только админам группы')
         else:
-            update.message.reply_text('Данная функция доступна только в группе')
+            update.message.reply_text('Данная команда доступна только в группе')
     return decorated
 
 def local_hw_cleaner(index):
@@ -94,21 +98,36 @@ def local_hw_cleaner(index):
 #фоновые функции
 
 def update_db():
+    saved_hw_count, saved_temp_count = (0, 0)
     with psycopg2.connect(os.environ['DATABASE_URL'], sslmode='require') as db:
         with db.cursor() as c:
-            c.execute('DELETE FROM hw')
-            for k, v in dict(updater.dispatcher.chat_data)[int(os.environ['TARGET_CHAT_ID'])]['hw'].items():
-                c.execute('INSERT INTO hw VALUES (%s, %s, %s, %s)', (k, v['text'], '<d>'.join(v['photoid']), v['outdated']))
-            c.execute('SELECT * FROM hw')
+            try:
+                c.execute('DELETE FROM hw')
+                for k, v in dict(updater.dispatcher.chat_data)[int(os.environ['TARGET_CHAT_ID'])]['hw'].items():
+                    c.execute('INSERT INTO hw VALUES (%s, %s, %s, %s)', (k, v['text'], '<d>'.join(v['photoid']), v['outdated']))
+                    saved_hw_count += 1
+            except:
+                saved_hw_count *= -1
+                
+            try:
+                c.execute('DELETE FROM temp')
+                for k, v in dict(updater.dispatcher.chat_data)[int(os.environ['TARGET_CHAT_ID'])]['temp']['hw'].items():
+                    c.execute('INSERT INTO temp VALUES (%s, %s)', (k, json.dumps(v)))
+                    saved_temp_count += 1
+            except:
+                saved_temp_count *= -1
+                
+    return saved_hw_count, saved_temp_count
             
 def delete_keyboard(context):
+    msg, context = context.job.context 
     try:
-        context.job.context.edit_reply_markup()
+        if len(msg.reply_markup.inline_keyboard)==1:
+            msg.edit_reply_markup()
     except:
         pass
     else:
-        del context.chat_data['temp']['hw'][context.job.context.message_id]
-        del context.bot_data[context.job.context.message_id]
+        del context.chat_data['temp']['hw'][msg.reply_to_message.message_id]
 
 def errors(update, context=None):   
     try:
@@ -214,15 +233,23 @@ updater.dispatcher.add_handler(tg_ext.CommandHandler('exec', exec_script))
 @groupadmin_function
 def update_hw(update, context):
     sent = update.effective_chat.send_message('Обновляю...')
-    update_db()
+    start = time.monotonic()
+    hw_count, temp_count = update_db()
     resp = get_hw()
-    if resp['valid']:
-        sent.edit_text('Д/З обновлено')
-    else:
-        sent.edit_text(resp['error'])
+    end = time.monotonic()
+    res_text = f"""
+Статус сохранения Д/З: {'✅' if hw_count>=0 else '❌'}
+Сохранено Д/З по {abs(hw_count)} предметам\n
+Статус сохранения временного кеша: {'✅' if temp_count>=0 else '❌'}
+Сохранено {abs(temp_count)} позиций временного кеша\n
+Статус кеширования Д/З: {max(resp)}\n
+Время выполнения: {str(int(1000 * (end - start)))} мс
+    """
+    
+    sent.edit_text(res_text)
 updater.dispatcher.add_handler(tg_ext.CommandHandler('force_update', update_hw))
 
-@groupadmin_function    
+@groupadmin_function
 def force_schedule(update, context):
     daily_schedule(context, force=True)
 updater.dispatcher.add_handler(tg_ext.CommandHandler('schedule', force_schedule))
@@ -238,7 +265,7 @@ def read_hw(update, context):
     keyword = HW_SEARCH.search(update.message.text).groups()[0]
     buttons = tg.InlineKeyboardMarkup([
         [tg.InlineKeyboardButton(text='Из электронного дневника', callback_data=f"READ_HW#EXT#{keyword}#{'1' if 'сегодня' in update.message.text else ''}")],
-        [tg.InlineKeyboardButton(text='Из этого чата', callback_data=f"READ_HW#LOCAL#{keyword}")],
+        [tg.InlineKeyboardButton(text='Из этого чата', callback_data=f"READ_HW#LOCAL#{keyword}#{'1' if 'сегодня' in update.message.text else ''}")],
         [tg.InlineKeyboardButton(text='Отмена', callback_data="READ_HW#CANCEL")]
     ])
     
@@ -292,8 +319,7 @@ def write_hw(update, context):
                 ]])
         
                 answer = update.message.reply_text('Д/З записано', reply_markup=button)
-                updater.job_queue.run_once(delete_keyboard, when=10, context=answer)
-                context.bot_data.update({answer.message_id: answer})
+                updater.job_queue.run_once(delete_keyboard, when=10, context=(answer, context))
                 
             else:
                 print('entry')
@@ -329,9 +355,7 @@ def write_hw(update, context):
         ]])
         
         answer = update.message.reply_text('Д/З записано', reply_markup=button)
-        updater.job_queue.run_once(delete_keyboard, when=10, context=answer)
-        context.bot_data.update({answer.message_id: answer})
-        
+        updater.job_queue.run_once(delete_keyboard, when=10, context=(answer, context))
 updater.dispatcher.add_handler(tg_ext.MessageHandler(tg_ext.Filters.regex(p2) | tg_ext.Filters.photo, write_hw))
 
 @handle_chat_data
@@ -360,8 +384,7 @@ def delete_hw(update, context):
         tg.InlineKeyboardButton(text='Отмена', callback_data=f"DEL_HW#CANCEL#{shortcut}")
     ]])
     answer = update.message.reply_text(text='Д/З удалено', reply_markup=button)
-    updater.job_queue.run_once(delete_keyboard, when=10, context=answer)
-    context.bot_data['keyboards'].update({answer.message_id: answer})
+    updater.job_queue.run_once(delete_keyboard, when=10, context=(answer, context))
 updater.dispatcher.add_handler(tg_ext.CommandHandler('delete', delete_hw))
 
 def get_external_hw(subject, for_today=False):
@@ -405,9 +428,12 @@ def get_external_hw(subject, for_today=False):
         return (hw['error'], [])
     
 def get_local_hw(subject, chat_data):
+    if not chat_data:
+        chat_data = {'hw': {}}
     res = chat_data['hw'].get(subject, {'text': '', 'photoid': []})
     return ('Д/З: '+res['text'], res['photoid'])
 
+@handle_chat_data
 def button_callback(update, context):
     print(update.callback_query.data)
     if update.callback_query.message.reply_to_message.from_user == update.callback_query.from_user:
@@ -429,9 +455,11 @@ def button_callback(update, context):
                     photo_objs = [tg.InputMediaPhoto(media=res[1][0], caption=res[0])]
                     photo_objs += [tg.InputMediaPhoto(media=i) for i in res[1][1:]]
                     
-                    req_msg.reply_media_group(media=photo_objs)
+                    answer = req_msg.reply_media_group(media=photo_objs)
                 else:
-                    update.callback_query.message.edit_text(text=res[0])
+                    req_msg = update.callback_query.message.reply_to_message
+                    update.callback_query.message.delete()
+                    req_msg.reply_text(text=res[0])
                     
         elif args[0] == 'WRITE_HW':
             if args[1] == 'CANCEL':
@@ -442,6 +470,8 @@ def button_callback(update, context):
                 else:
                     del context.chat_data['hw'][args[2]]
                 del context.chat_data['temp']['hw'][request_msgid]
+                update.callback_query.message.delete()
+                
         elif args[0] == 'DEL_HW':
             if args[1] == 'CANCEL':
                 request_msgid = update.callback_query.message.reply_to_message.message_id
@@ -450,7 +480,6 @@ def button_callback(update, context):
                 context.chat_data['hw'][args[2]] = prev_hw
                 del context.chat_data['temp']['hw'][request_msgid]    
                 update.callback_query.message.delete()
-        del context.bot_data[update.callback_query.message.message_id]
 updater.dispatcher.add_handler(tg_ext.CallbackQueryHandler(button_callback))
         
 
