@@ -88,7 +88,7 @@ def local_hw_cleaner(index):
             
         today = dt.datetime.now().weekday()
         if hw['valid']:
-            if hw['content'][today].keys()[1] not in NO_LESSONS:
+            if list(hw['content'][today].keys())[1] not in NO_LESSONS:
                 lessons = hw['content'][today]['lessons']
                 lesson_shortcut = HW_SEARCH.search(lessons[min(len(lessons)-1, index)]['discipline']).groups()[0].lower()
                 if context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'].get(lesson_shortcut):

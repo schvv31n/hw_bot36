@@ -13,6 +13,7 @@ def get_hw():
     with PoolManager(cert_reqs='CERT_NONE', timeout=Timeout(connect=5.0)) as http:
         
         error = None
+        r = None
         
         try:
             r = http.request('POST', 'https://sh-open.ris61edu.ru/auth/login',
