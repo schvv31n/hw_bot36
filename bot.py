@@ -1,5 +1,12 @@
 import os
 import json
+#ENV VARIABLES IMPORT FOR DEBUGGING, DO NOT DEPLOY THE FOLLOWING:
+with open('debug_env.json') as r:
+    env_dict = list(json.loads(r.read()).items())
+    for k, v in env_dict:
+        os.environ[k] = v
+#REMOVE UP TO HERE
+
 import datetime as dt
 import telegram as tg
 import telegram.ext as tg_ext
@@ -90,7 +97,8 @@ def local_hw_cleaner(index):
         if hw['valid']:
             if list(hw['content'][today].keys())[1] not in NO_LESSONS:
                 lessons = hw['content'][today]['lessons']
-                lesson_shortcut = HW_SEARCH.search(lessons[min(len(lessons)-1, index)]['discipline']).groups()[0].lower()
+                name = lessons[min(len(lessons)-1, index)]['discipline']
+                lesson_shortcut = HW_SEARCH.search(SPECIAL_NAMES.get(name, name)).groups()[0].lower()
                 if context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'].get(lesson_shortcut):
                     context.dispatcher.chat_data[int(os.environ['TARGET_CHAT_ID'])]['hw'][lesson_shortcut]['outdated'] = True
     return decorated
