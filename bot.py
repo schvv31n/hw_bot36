@@ -1,12 +1,5 @@
 import os
 import json
-#ENV VARIABLES IMPORT FOR DEBUGGING, DO NOT DEPLOY THE FOLLOWING:
-with open('debug_env.json') as r:
-    env_dict = list(json.loads(r.read()).items())
-    for k, v in env_dict:
-        os.environ[k] = v
-#REMOVE UP TO HERE
-
 import datetime as dt
 import telegram as tg
 import telegram.ext as tg_ext
